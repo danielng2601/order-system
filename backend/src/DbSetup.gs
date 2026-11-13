@@ -79,6 +79,29 @@ const SCHEMA_HEADERS = {
  */
 function getDatabaseSpreadsheet() {
   const props = PropertiesService.getScriptProperties();
+  const rawEnv = props.getProperty('ROMS_ENV');
+  const envName = rawEnv ? String(rawEnv).trim().toUpperCase() : '';
+
+  if (envName === 'STAGING' || envName === 'PRODUCTION') {
+    const envSpecificId = String(props.getProperty(envName + '_SPREADSHEET_ID') || '').trim();
+    const defaultId = String(props.getProperty('SPREADSHEET_ID') || '').trim();
+    const targetId = envSpecificId || defaultId;
+
+    if (envName === 'STAGING') {
+      const prodId = String(props.getProperty('PRODUCTION_SPREADSHEET_ID') || '').trim();
+      if (prodId && targetId && targetId === prodId) {
+        throw new Error('Environment safety violation: STAGING cannot use PRODUCTION_SPREADSHEET_ID.');
+      }
+    }
+
+    if (!targetId) {
+      throw new Error(
+        'SPREADSHEET_ID (or ' + envName + '_SPREADSHEET_ID) must be set in Script Properties when ROMS_ENV=' + envName + '.'
+      );
+    }
+    return SpreadsheetApp.openById(targetId);
+  }
+
   const spreadsheetId = props.getProperty('SPREADSHEET_ID');
   if (spreadsheetId) {
     return SpreadsheetApp.openById(spreadsheetId);
@@ -469,21 +492,37 @@ function seedTablesSeatsIfEmpty_(ss) {
 
 /**
  * Creates a timestamped backup copy of the database spreadsheet in Google Drive.
- * @return {{ ok: boolean, fileId: string, fileName: string }}
+ * @return {{ ok: boolean, environment: string, fileId?: string, fileName?: string, error?: string }}
  */
 function backupDatabaseToDrive() {
-  const ss = getDatabaseSpreadsheet();
-  const folderName = 'ROMS_Backups';
-  const folders = DriveApp.getFoldersByName(folderName);
-  const backupFolder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+  const props = PropertiesService.getScriptProperties();
+  const rawEnv = props.getProperty('ROMS_ENV');
+  const envName = rawEnv ? String(rawEnv).trim().toUpperCase() : 'UNSPECIFIED';
 
-  const stamp = Utilities.formatDate(new Date(), ROMS_CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
-  const backupName = ss.getName() + '_backup_' + stamp;
-  const file = DriveApp.getFileById(ss.getId()).makeCopy(backupName, backupFolder);
+  try {
+    const ss = getDatabaseSpreadsheet();
+    const folderName = 'ROMS_Backups';
+    const folders = DriveApp.getFoldersByName(folderName);
+    const backupFolder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
 
-  return {
-    ok: true,
-    fileId: file.getId(),
-    fileName: file.getName(),
-  };
+    const stamp = Utilities.formatDate(new Date(), ROMS_CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
+    const baseName = ss.getName();
+    const envTag =
+      envName !== 'UNSPECIFIED' && baseName.toUpperCase().indexOf(envName) === -1 ? '_' + envName : '';
+    const backupName = baseName + envTag + '_backup_' + stamp;
+    const file = DriveApp.getFileById(ss.getId()).makeCopy(backupName, backupFolder);
+
+    return {
+      ok: true,
+      environment: envName,
+      fileId: file.getId(),
+      fileName: file.getName(),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      environment: envName,
+      error: (err && err.message) || 'Drive backup failed',
+    };
+  }
 }
