@@ -57,6 +57,7 @@ order-system/
 - **Phase 1 & 1.5 (Completed):** Dynamic menu, modifiers, toppings, cart, `DINE_IN`/`TAKEAWAY` checkout, POST-only session auth, and rollback hardening.
 - **Phase 2 & 2.5 (Completed):** 3×3 Floor Plan (9 tables × 4 seats), seat-based item assignment, add items, move item, merge/split orders, active order filters, multi-device polling sync, and integration audit.
 - **Phase 3 (Completed):** Payment settlement (`CASH`/`BANK`), item editing/removal, order cancellation, paginated order history, daily/range reports, UTF-8 BOM CSV exports, and `Payments` integrity checks.
+- **Phase 3.5 (Completed):** Production-readiness audit, `Paid` `moveOrderItem` guard, CSV formula injection protection, payment timeout idempotent retry, v1.2.0 → v1.3.0 migration verification (48/48 tests passing).
 
 ## Running Automated Tests
 
@@ -68,6 +69,10 @@ npm test
 
 ## Documentation
 
+- [PHASE3_5_AUDIT.md](PHASE3_5_AUDIT.md) — Phase 3.5 production-readiness audit & fixes.
+- [PAYMENT_AND_ACCOUNTING_INVARIANTS.md](PAYMENT_AND_ACCOUNTING_INVARIANTS.md) — Canonical accounting & payment invariants.
+- [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) — Controlled deployment sequence & known limitations.
+- [PHASE3_5_TEST_REPORT.md](PHASE3_5_TEST_REPORT.md) — Phase 3.5 automated test results (48/48 passing).
 - [PHASE3_IMPLEMENTATION.md](PHASE3_IMPLEMENTATION.md) — Phase 3 payment, lifecycle, history, and reporting summary.
 - [PAYMENT_WORKFLOW.md](PAYMENT_WORKFLOW.md) — Single full settlement (`CASH`/`BANK`) and rollback rules.
 - [ORDER_EDITING_AND_CANCELLATION.md](ORDER_EDITING_AND_CANCELLATION.md) — Item edit/remove and order cancellation rules.
