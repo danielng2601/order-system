@@ -1,0 +1,120 @@
+/**
+ * ROMS V1.0 - Cross-Domain GAS API Client
+ *
+ * Uses Content-Type: text/plain;charset=utf-8 on POST requests so the browser
+ * sends a CORS simple request without triggering an OPTIONS preflight
+ * (which Google Apps Script Web Apps do not handle).
+ */
+(function (global) {
+  'use strict';
+
+  const STORAGE_KEYS = {
+    PASSCODE: 'roms_staff_passcode',
+    API_URL: 'roms_gas_url',
+  };
+
+  function getApiUrl() {
+    const stored = global.sessionStorage ? global.sessionStorage.getItem(STORAGE_KEYS.API_URL) : '';
+    if (stored) return stored;
+    return (global.ROMS_CONFIG && global.ROMS_CONFIG.GAS_WEB_APP_URL) || '';
+  }
+
+  function setApiUrl(url) {
+    if (global.sessionStorage) {
+      global.sessionStorage.setItem(STORAGE_KEYS.API_URL, String(url || '').trim());
+    }
+  }
+
+  function getPasscode() {
+    return global.sessionStorage ? global.sessionStorage.getItem(STORAGE_KEYS.PASSCODE) || '' : '';
+  }
+
+  function setPasscode(passcode) {
+    if (global.sessionStorage) {
+      global.sessionStorage.setItem(STORAGE_KEYS.PASSCODE, String(passcode || ''));
+    }
+  }
+
+  async function requestGet(action, extraParams) {
+    const baseUrl = getApiUrl();
+    if (!baseUrl || baseUrl.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
+      throw new Error('GAS Web App URL is not configured.');
+    }
+
+    const url = new URL(baseUrl);
+    url.searchParams.set('action', action);
+    if (extraParams) {
+      Object.keys(extraParams).forEach(function (key) {
+        if (extraParams[key] !== undefined && extraParams[key] !== null) {
+          url.searchParams.set(key, String(extraParams[key]));
+        }
+      });
+    }
+
+    const controller = new AbortController();
+    const timeoutMs = (global.ROMS_CONFIG && global.ROMS_CONFIG.REQUEST_TIMEOUT_MS) || 15000;
+    const timer = setTimeout(function () {
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function requestPost(action, payload) {
+    const baseUrl = getApiUrl();
+    if (!baseUrl || baseUrl.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
+      throw new Error('GAS Web App URL is not configured.');
+    }
+
+    const body = Object.assign({}, payload || {}, {
+      action: action,
+      passcode: getPasscode(),
+    });
+
+    const controller = new AbortController();
+    const timeoutMs = (global.ROMS_CONFIG && global.ROMS_CONFIG.REQUEST_TIMEOUT_MS) || 15000;
+    const timer = setTimeout(function () {
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const response = await fetch(baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(body),
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  global.ROMS_API = {
+    getApiUrl: getApiUrl,
+    setApiUrl: setApiUrl,
+    getPasscode: getPasscode,
+    setPasscode: setPasscode,
+    checkHealth: function () {
+      return requestGet('health');
+    },
+    fetchBootstrap: function () {
+      return requestGet('bootstrap', { passcode: getPasscode() });
+    },
+    ping: function () {
+      return requestPost('ping', {});
+    },
+  };
+})(window);

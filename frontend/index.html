@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ROMS V1.0 — Restaurant Order Management System</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>ROMS V1.0</h1>
+      <p class="subtitle">Phase 0 Infrastructure &amp; Connectivity Shell (Asia/Ho_Chi_Minh · VND)</p>
+    </div>
+    <span id="health-badge" class="status-badge">Phase 0 Ready</span>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Backend Connection (Google Apps Script)</h2>
+      <div class="grid-2">
+        <div class="field">
+          <label for="gas-url-input">GAS Web App URL</label>
+          <input id="gas-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
+        </div>
+        <div class="field">
+          <label for="staff-passcode-input">Staff Passcode (session only)</label>
+          <input id="staff-passcode-input" type="password" placeholder="Enter staff passcode" autocomplete="off" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="save-config-btn" type="button" class="btn">Save Session Config</button>
+        <button id="check-health-btn" type="button" class="btn btn-primary">Check Backend Health</button>
+      </div>
+      <pre id="health-output">Click "Check Backend Health" after deploying GAS Web App.</pre>
+    </section>
+
+    <section class="card">
+      <h2>Implementation Roadmap</h2>
+      <ul class="clean-list">
+        <li><strong>Phase 0 (Current):</strong> Project structure, GAS setup, Sheets schema, API contract, docs &amp; tests.</li>
+        <li><strong>Phase 1:</strong> Menu, modifiers, paid toppings, cart &amp; checkout.</li>
+        <li><strong>Phase 2:</strong> 9 tables × 4 seats (36 seats) &amp; multi-table/seat assignment.</li>
+        <li><strong>Phase 3:</strong> Order management (edit, merge, split), payment, sync &amp; E2E testing.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="js/config.example.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
