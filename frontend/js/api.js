@@ -19,6 +19,8 @@
     SESSION_TOKEN: 'roms_session_token',
     EXPIRES_AT_MS: 'roms_session_expires_ms',
     API_URL: 'roms_gas_url',
+    VERIFIED_ENV_URL: 'roms_verified_env_url',
+    VERIFIED_ENV_NAME: 'roms_verified_env_name',
   };
 
   function getGlobal() {
@@ -115,6 +117,7 @@
     if (storage) {
       storage.setItem(getStorageKey(STORAGE_KEYS.API_URL), trimmed);
     }
+    clearVerifiedHandshake();
     if (prevUrl && prevUrl !== trimmed) {
       clearSession();
     }
@@ -141,12 +144,21 @@
     }
   }
 
+  function clearVerifiedHandshake() {
+    const storage = getStorage();
+    if (storage) {
+      storage.removeItem(getStorageKey(STORAGE_KEYS.VERIFIED_ENV_URL));
+      storage.removeItem(getStorageKey(STORAGE_KEYS.VERIFIED_ENV_NAME));
+    }
+  }
+
   function clearSession() {
     const storage = getStorage();
     if (storage) {
       storage.removeItem(getStorageKey(STORAGE_KEYS.SESSION_TOKEN));
       storage.removeItem(getStorageKey(STORAGE_KEYS.EXPIRES_AT_MS));
     }
+    clearVerifiedHandshake();
   }
 
   function makeApiError(message, code) {
@@ -247,8 +259,81 @@
     return executeFetch(url.toString(), { method: 'GET' });
   }
 
-  async function requestPost(action, payload, includeSession) {
+  function isHandshakeVerifiedForCurrentConfig() {
+    const envState = resolveEnvState();
+    if (!envState || !envState.valid) return false;
+    const storage = getStorage();
+    if (!storage) return false;
+    const verifiedUrl = storage.getItem(getStorageKey(STORAGE_KEYS.VERIFIED_ENV_URL)) || '';
+    const verifiedEnv = storage.getItem(getStorageKey(STORAGE_KEYS.VERIFIED_ENV_NAME)) || '';
+    return verifiedUrl === getApiUrl() && verifiedEnv === envState.env;
+  }
+
+  async function verifyEnvironmentHandshake() {
+    const g = getGlobal();
+    const envState = resolveEnvState();
+    if (!envState || !envState.valid) {
+      clearSession();
+      throw makeApiError(
+        (envState && envState.errorMessage) || 'Cấu hình môi trường không hợp lệ.',
+        (envState && envState.errorCode) || 'INVALID_ENV'
+      );
+    }
+
     const baseUrl = assertConfiguredUrl();
+    let healthRes;
+    try {
+      healthRes = await requestHealth();
+    } catch (err) {
+      clearVerifiedHandshake();
+      if (err && err.code) {
+        throw err;
+      }
+      throw makeApiError('Không thể xác minh môi trường backend.', 'ENV_HANDSHAKE_FAILED');
+    }
+
+    if (!healthRes || !healthRes.ok || !healthRes.data || typeof healthRes.data !== 'object') {
+      clearSession();
+      throw makeApiError('Phản hồi health check từ backend không hợp lệ.', 'ENV_HANDSHAKE_FAILED');
+    }
+
+    const backendEnv = String(healthRes.data.environment || '').trim().toUpperCase();
+    const allowedEnvs = g.ROMS_ENV && Array.isArray(g.ROMS_ENV.ALLOWED_ENVS)
+      ? g.ROMS_ENV.ALLOWED_ENVS
+      : ['LOCAL', 'STAGING', 'PRODUCTION'];
+
+    if (allowedEnvs.indexOf(backendEnv) === -1 || backendEnv !== envState.env) {
+      clearSession();
+      throw makeApiError(
+        'Môi trường không khớp: Frontend là ' +
+          envState.env +
+          ' nhưng Backend trả về ' +
+          (backendEnv || 'UNSPECIFIED') +
+          '. Đã chặn kết nối.',
+        'ENV_MISMATCH'
+      );
+    }
+
+    const storage = getStorage();
+    if (storage) {
+      storage.setItem(getStorageKey(STORAGE_KEYS.VERIFIED_ENV_URL), baseUrl);
+      storage.setItem(getStorageKey(STORAGE_KEYS.VERIFIED_ENV_NAME), envState.env);
+    }
+
+    return {
+      env: envState.env,
+      backendEnv: backendEnv,
+      url: baseUrl,
+      health: healthRes.data,
+    };
+  }
+
+  async function requestPost(action, payload, includeSession) {
+    const g = getGlobal();
+    const baseUrl = assertConfiguredUrl();
+    if (action !== 'login' && g.ROMS_ENV && !isHandshakeVerifiedForCurrentConfig()) {
+      await verifyEnvironmentHandshake();
+    }
     const body = Object.assign({}, payload || {}, { action: action });
     if (includeSession !== false) {
       const token = getSessionToken();
@@ -279,7 +364,9 @@
     setSession: setSession,
     clearSession: clearSession,
     checkHealth: requestHealth,
+    verifyEnvironmentHandshake: verifyEnvironmentHandshake,
     login: async function (passcode) {
+      await verifyEnvironmentHandshake();
       const res = await requestPost('login', { passcode: String(passcode || '') }, false);
       if (res.ok && res.data && res.data.session_token) {
         setSession(res.data.session_token, res.data.expires_at_ms);
