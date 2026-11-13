@@ -124,15 +124,31 @@ function doPost(e) {
     });
   }
 
-  if (action === 'bootstrap' || action === 'menu' || action === 'modifiers') {
+  if (
+    action === 'bootstrap' ||
+    action === 'menu' ||
+    action === 'modifiers' ||
+    action === 'syncStatus' ||
+    action === 'getFloorState' ||
+    action === 'listActiveOrders' ||
+    action === 'getOrderDetail'
+  ) {
     try {
       const ss = getDatabaseSpreadsheet();
-      const data =
-        action === 'bootstrap'
-          ? handleGetBootstrap_(ss)
-          : action === 'menu'
-            ? handleGetMenu_(ss)
-            : handleGetModifiers_(ss);
+      if (action === 'getOrderDetail') {
+        const detailRes = handleGetOrderDetail_(ss, payload);
+        if (detailRes.error) {
+          return jsonResponse_({ ok: false, data: null, error: detailRes.error });
+        }
+        return jsonResponse_({ ok: true, data: detailRes.data, error: null });
+      }
+      let data;
+      if (action === 'bootstrap') data = handleGetBootstrap_(ss);
+      else if (action === 'menu') data = handleGetMenu_(ss);
+      else if (action === 'modifiers') data = handleGetModifiers_(ss);
+      else if (action === 'syncStatus') data = handleGetSyncStatus_(ss);
+      else if (action === 'getFloorState') data = handleGetFloorState_(ss);
+      else if (action === 'listActiveOrders') data = handleListActiveOrders_(ss, payload.filters);
       return jsonResponse_({ ok: true, data: data, error: null });
     } catch (err) {
       return jsonResponse_({
@@ -143,13 +159,14 @@ function doPost(e) {
     }
   }
 
-  if (action !== 'createOrder') {
+  const writeActions = ['createOrder', 'addItemsToOrder', 'moveOrderItem', 'mergeOrders', 'splitOrder'];
+  if (writeActions.indexOf(action) === -1) {
     return jsonResponse_({
       ok: false,
       data: null,
       error: {
         code: 'NOT_IMPLEMENTED',
-        message: 'Action "' + action + '" is scheduled for Phase 2-3.',
+        message: 'Action "' + action + '" is scheduled for Phase 3.',
       },
     });
   }
@@ -169,7 +186,13 @@ function doPost(e) {
     }
 
     const ss = getDatabaseSpreadsheet();
-    const result = handleCreateOrder_(ss, payload);
+    let result;
+    if (action === 'createOrder') result = handleCreateOrder_(ss, payload);
+    else if (action === 'addItemsToOrder') result = handleAddItemsToOrder_(ss, payload);
+    else if (action === 'moveOrderItem') result = handleMoveOrderItem_(ss, payload);
+    else if (action === 'mergeOrders') result = handleMergeOrders_(ss, payload);
+    else if (action === 'splitOrder') result = handleSplitOrder_(ss, payload);
+
     if (result.error) {
       return jsonResponse_({
         ok: false,

@@ -24,6 +24,8 @@ const SCHEMA_HEADERS = {
     'updated_at',
     'paid_at',
     'created_by',
+    'merged_into_order_id',
+    'parent_order_ids_json',
   ],
   OrderItems: [
     'order_item_id',
@@ -112,6 +114,7 @@ function setupDatabase() {
 
   seedSettingsIfEmpty_(ss);
   updateSettingValue_(ss, 'SchemaVersion', ROMS_CONFIG.SCHEMA_VERSION);
+  ensureSettingExists_(ss, 'SyncRevision', '1', 'Monotonic sync cursor incremented on order writes');
   seedMenuItemsIfEmpty_(ss, nowStr);
   seedModifiersIfEmpty_(ss);
   seedTablesSeatsIfEmpty_(ss);
@@ -254,6 +257,18 @@ function verifyDatabaseIntegrity(ssOpt) {
   return { ok: errors.length === 0, errors: errors };
 }
 
+function ensureSettingExists_(ss, key, defaultValue, description) {
+  const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS);
+  if (!sheet) return;
+  if (sheet.getLastRow() >= 2) {
+    const values = sheet.getDataRange().getValues();
+    for (let r = 1; r < values.length; r += 1) {
+      if (String(values[r][0]) === key) return;
+    }
+  }
+  sheet.appendRow([key, String(defaultValue), description || '']);
+}
+
 function updateSettingValue_(ss, key, value) {
   const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS);
   if (!sheet || sheet.getLastRow() < 2) return;
@@ -279,6 +294,7 @@ function seedSettingsIfEmpty_(ss) {
     ['ToppingPriceVnd', String(ROMS_CONFIG.TOPPING_UNIT_PRICE_VND), 'Price per extra topping unit'],
     ['TableCount', String(ROMS_CONFIG.TABLE_COUNT), 'Total physical tables'],
     ['SeatsPerTable', String(ROMS_CONFIG.SEATS_PER_TABLE), 'Seats per table'],
+    ['SyncRevision', '1', 'Monotonic sync cursor incremented on order writes'],
   ];
   sheet.getRange(2, 1, rows.length, 3).setValues(rows);
 }

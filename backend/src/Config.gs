@@ -6,8 +6,8 @@
 const ROMS_CONFIG = {
   APP_NAME: 'ROMS',
   APP_VERSION: '1.0.0',
-  SCHEMA_VERSION: '1.1.0',
-  PHASE: 'Phase 1.5',
+  SCHEMA_VERSION: '1.2.0',
+  PHASE: 'Phase 2',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CURRENCY: 'VND',
   TABLE_COUNT: 9,
@@ -32,7 +32,8 @@ const ROMS_CONFIG = {
     IDEMPOTENCY_KEYS: 'IdempotencyKeys',
   },
   ORDER_TYPES: ['DINE_IN', 'TAKEAWAY'],
-  ORDER_STATUSES: ['Draft', 'Confirmed', 'Cancelled'],
+  ORDER_STATUSES: ['Draft', 'Confirmed', 'Cancelled', 'Merged'],
+  ACTIVE_ORDER_STATUSES: ['Draft', 'Confirmed'],
   PAYMENT_STATUSES: ['Unpaid', 'Paid'],
 };
 

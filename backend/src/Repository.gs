@@ -277,6 +277,8 @@ function persistOrderAtomically_(ss, orderRecord, itemRecords, idempotencyRecord
     if (writtenIdempKey !== idempotencyRecord.idempotency_key) {
       throw new Error('IdempotencyKey write verification failed for ' + orderRecord.order_id);
     }
+
+    incrementSyncRevision_(ss);
   } catch (err) {
     // Roll back in reverse order so no orphan rows remain
     try {
@@ -305,3 +307,194 @@ function persistOrderAtomically_(ss, orderRecord, itemRecords, idempotencyRecord
     throw err;
   }
 }
+
+/**
+ * Safely parses a JSON array string, returning fallback on error.
+ * @param {*} raw
+ * @param {*=} fallback
+ * @return {*}
+ */
+function safeParseJson_(raw, fallback) {
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return fallback !== undefined ? fallback : [];
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return fallback !== undefined ? fallback : [];
+  }
+}
+
+/**
+ * Reads the current SyncRevision integer from Settings.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @return {number}
+ */
+function getSyncRevision_(ss) {
+  const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS);
+  if (!sheet || sheet.getLastRow() < 2) return 1;
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r += 1) {
+    if (String(values[r][0]) === 'SyncRevision') {
+      const rev = Number(values[r][1]);
+      return Number.isInteger(rev) && rev >= 1 ? rev : 1;
+    }
+  }
+  return 1;
+}
+
+/**
+ * Atomically increments Settings.SyncRevision inside ScriptLock.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @return {number}
+ */
+function incrementSyncRevision_(ss) {
+  const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS);
+  if (!sheet) return 1;
+  if (sheet.getLastRow() >= 2) {
+    const values = sheet.getDataRange().getValues();
+    for (let r = 1; r < values.length; r += 1) {
+      if (String(values[r][0]) === 'SyncRevision') {
+        const nextRev = (Number(values[r][1]) || 1) + 1;
+        sheet.getRange(r + 1, 2).setValue(String(nextRev));
+        SpreadsheetApp.flush();
+        return nextRev;
+      }
+    }
+  }
+  sheet.appendRow(['SyncRevision', '2', 'Monotonic sync cursor incremented on order writes']);
+  SpreadsheetApp.flush();
+  return 2;
+}
+
+/**
+ * Loads all Orders and OrderItems in two batch sheet reads and normalizes them.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @return {{ orders: Array<Object>, ordersById: Object, itemsByOrderId: Object }}
+ */
+function loadAllOrdersAndItems_(ss) {
+  const ordersSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.ORDERS);
+  const itemsSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.ORDER_ITEMS);
+
+  const rawOrders = sheetToObjects_(ordersSheet);
+  const rawItems = sheetToObjects_(itemsSheet);
+
+  const itemsByOrderId = {};
+  rawItems.forEach(function (row, idx) {
+    if (!String(row.order_item_id || '').trim()) return;
+    const item = {
+      _rowIndex: idx + 2,
+      order_item_id: String(row.order_item_id),
+      order_id: String(row.order_id),
+      seat_id: String(row.seat_id || ''),
+      table_number: row.table_number === '' || row.table_number === null ? null : Number(row.table_number),
+      seat_number: row.seat_number === '' || row.seat_number === null ? null : Number(row.seat_number),
+      item_id: String(row.item_id),
+      item_name_snapshot: String(row.item_name_snapshot),
+      unit_price_vnd: Number(row.unit_price_vnd),
+      quantity: Number(row.quantity),
+      modifiers: safeParseJson_(row.modifiers_json, []),
+      modifiers_json: String(row.modifiers_json || '[]'),
+      topping_units: Number(row.topping_units || 0),
+      topping_unit_price_vnd: Number(row.topping_unit_price_vnd || ROMS_CONFIG.TOPPING_UNIT_PRICE_VND),
+      line_total_vnd: Number(row.line_total_vnd),
+      custom_note: String(row.custom_note || ''),
+      created_at: String(row.created_at || ''),
+      updated_at: String(row.updated_at || ''),
+    };
+    if (!itemsByOrderId[item.order_id]) {
+      itemsByOrderId[item.order_id] = [];
+    }
+    itemsByOrderId[item.order_id].push(item);
+  });
+
+  const orders = [];
+  const ordersById = {};
+  rawOrders.forEach(function (row, idx) {
+    if (!String(row.order_id || '').trim()) return;
+    const order = {
+      _rowIndex: idx + 2,
+      order_id: String(row.order_id),
+      order_number: String(row.order_number || ''),
+      order_type: String(row.order_type),
+      status: String(row.status),
+      payment_status: String(row.payment_status),
+      table_numbers: safeParseJson_(row.table_numbers_json, []),
+      table_numbers_json: String(row.table_numbers_json || '[]'),
+      subtotal_vnd: Number(row.subtotal_vnd || 0),
+      total_vnd: Number(row.total_vnd || 0),
+      version: Number(row.version || 1),
+      idempotency_key: String(row.idempotency_key || ''),
+      notes: String(row.notes || ''),
+      created_at: String(row.created_at || ''),
+      updated_at: String(row.updated_at || ''),
+      paid_at: String(row.paid_at || ''),
+      created_by: String(row.created_by || ''),
+      merged_into_order_id: String(row.merged_into_order_id || ''),
+      parent_order_ids: safeParseJson_(row.parent_order_ids_json, []),
+      parent_order_ids_json: String(row.parent_order_ids_json || '[]'),
+    };
+    orders.push(order);
+    ordersById[order.order_id] = order;
+  });
+
+  return {
+    orders: orders,
+    ordersById: ordersById,
+    itemsByOrderId: itemsByOrderId,
+  };
+}
+
+/**
+ * Computes derived table_numbers and total_vnd from an array of item snapshots.
+ * @param {string} orderType
+ * @param {Array<Object>} items
+ * @return {{ table_numbers: Array<number>, total_vnd: number }}
+ */
+function computeOrderAggregatesFromItems_(orderType, items) {
+  const tableSet = {};
+  let totalVnd = 0;
+  items.forEach(function (it) {
+    totalVnd += Number(it.line_total_vnd);
+    if (orderType === 'DINE_IN' && it.seat_id) {
+      const parsed = parseSeatId(it.seat_id);
+      if (parsed) {
+        tableSet[parsed.table_number] = true;
+      }
+    }
+  });
+  const tableNumbers = Object.keys(tableSet)
+    .map(Number)
+    .sort(function (a, b) {
+      return a - b;
+    });
+  return {
+    table_numbers: tableNumbers,
+    total_vnd: totalVnd,
+  };
+}
+
+/**
+ * Updates an existing Orders row by 1-based rowIndex.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} ordersSheet
+ * @param {number} rowIndex
+ * @param {Array<string>} headers
+ * @param {Object} orderRecord
+ */
+function writeOrderRowAt_(ordersSheet, rowIndex, headers, orderRecord) {
+  const values = mapRecordToHeaders_(headers, orderRecord);
+  ordersSheet.getRange(rowIndex, 1, 1, headers.length).setValues([values]);
+}
+
+/**
+ * Updates an existing OrderItems row by 1-based rowIndex.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} itemsSheet
+ * @param {number} rowIndex
+ * @param {Array<string>} headers
+ * @param {Object} itemRecord
+ */
+function writeOrderItemRowAt_(itemsSheet, rowIndex, headers, itemRecord) {
+  const values = mapRecordToHeaders_(headers, itemRecord);
+  itemsSheet.getRange(rowIndex, 1, 1, headers.length).setValues([values]);
+}
+

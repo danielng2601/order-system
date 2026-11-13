@@ -130,6 +130,8 @@ function handleCreateOrder_(ss, payload) {
     updated_at: nowStr,
     paid_at: '',
     created_by: actor,
+    merged_into_order_id: '',
+    parent_order_ids_json: '[]',
   };
 
   const itemRecords = norm.items.map(function (item, idx) {
@@ -207,6 +209,6 @@ function handleCreateOrder_(ss, payload) {
 
   return {
     statusCode: 'OK',
-    data: responseData,
+    data: Object.assign({}, responseData, { syncRevision: getSyncRevision_(ss) }),
   };
 }
