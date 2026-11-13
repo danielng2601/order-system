@@ -10,7 +10,13 @@
 function handleGetBootstrap_(ss) {
   const catalog = loadCatalog_(ss);
   return {
-    settings: catalog.settingsRows,
+    settings: {
+      schemaVersion: String(catalog.settingsMap.SchemaVersion || ROMS_CONFIG.SCHEMA_VERSION),
+      timezone: String(catalog.settingsMap.Timezone || ROMS_CONFIG.TIMEZONE),
+      currency: String(catalog.settingsMap.Currency || ROMS_CONFIG.CURRENCY),
+      tableCount: Number(catalog.settingsMap.TableCount || ROMS_CONFIG.TABLE_COUNT),
+      seatsPerTable: Number(catalog.settingsMap.SeatsPerTable || ROMS_CONFIG.SEATS_PER_TABLE),
+    },
     menuItems: catalog.menuItems,
     modifiers: catalog.modifiers.filter(function (mod) {
       return mod.is_active;
@@ -92,9 +98,16 @@ function handleCreateOrder_(ss, payload) {
 
   const now = new Date();
   const nowStr = formatLocalTimestamp(now);
-  let orderId = generateOrderId(now);
-  if (orderIdExists_(ss, orderId)) {
-    orderId = generateOrderId(now);
+  let orderId = '';
+  for (let attempt = 0; attempt < ROMS_CONFIG.MAX_ORDER_ID_RETRIES; attempt += 1) {
+    const candidate = generateOrderId(now);
+    if (!orderIdExists_(ss, candidate)) {
+      orderId = candidate;
+      break;
+    }
+  }
+  if (!orderId) {
+    throw new Error('Could not generate a unique order_id after retries.');
   }
   const dailySeq = nextDailyOrderSequence_(ss, now);
   const orderNumber = formatOrderNumber(now, dailySeq);

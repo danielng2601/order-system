@@ -127,6 +127,7 @@ function setupDatabase() {
 
 /**
  * Safely appends any missing schema columns to an existing sheet without moving existing data.
+ * Detects duplicate headers and rejects corrupted schemas.
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {Array<string>} expectedHeaders
  */
@@ -137,13 +138,120 @@ function ensureSheetColumns_(sheet, expectedHeaders) {
     sheet.setFrozenRows(1);
     return;
   }
-  const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const currentHeaders = [];
+  const seen = {};
+  for (let i = 0; i < rawHeaders.length; i += 1) {
+    const h = String(rawHeaders[i] || '').trim();
+    if (!h) continue;
+    if (seen[h]) {
+      throw new Error('Duplicate header "' + h + '" in sheet "' + sheet.getName() + '"');
+    }
+    seen[h] = true;
+    currentHeaders.push(h);
+  }
   const missing = expectedHeaders.filter(function (col) {
     return currentHeaders.indexOf(col) === -1;
   });
   if (missing.length > 0) {
     sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
   }
+}
+
+/**
+ * Verifies schema headers, primary key uniqueness, VND integer types, and OrderItems -> Orders FK integrity.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet=} ssOpt
+ * @return {{ ok: boolean, errors: Array<string> }}
+ */
+function verifyDatabaseIntegrity(ssOpt) {
+  const ss = ssOpt || getDatabaseSpreadsheet();
+  const errors = [];
+
+  Object.keys(SCHEMA_HEADERS).forEach(function (sheetName) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      errors.push('Missing required sheet: ' + sheetName);
+      return;
+    }
+    if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
+      errors.push('Empty header row in sheet: ' + sheetName);
+      return;
+    }
+    const headers = sheet
+      .getRange(1, 1, 1, sheet.getLastColumn())
+      .getValues()[0]
+      .map(function (h) {
+        return String(h || '').trim();
+      });
+    const seen = {};
+    headers.forEach(function (h) {
+      if (!h) return;
+      if (seen[h]) errors.push('Duplicate header "' + h + '" in ' + sheetName);
+      seen[h] = true;
+    });
+    SCHEMA_HEADERS[sheetName].forEach(function (reqCol) {
+      if (headers.indexOf(reqCol) === -1) {
+        errors.push('Missing column "' + reqCol + '" in ' + sheetName);
+      }
+    });
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors: errors };
+  }
+
+  // Check primary key uniqueness & types
+  function checkUniquePk(sheetName, pkField) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return {};
+    const rows = sheet.getDataRange().getValues();
+    const pkCol = rows[0].indexOf(pkField);
+    const seen = {};
+    for (let r = 1; r < rows.length; r += 1) {
+      const val = String(rows[r][pkCol] || '').trim();
+      if (!val) continue; // ignore completely blank trailing rows
+      if (seen[val]) {
+        errors.push('Duplicate ' + pkField + ' "' + val + '" in ' + sheetName);
+      }
+      seen[val] = true;
+    }
+    return seen;
+  }
+
+  checkUniquePk(ROMS_CONFIG.SHEETS.MENU_ITEMS, 'item_id');
+  checkUniquePk(ROMS_CONFIG.SHEETS.MODIFIERS, 'modifier_id');
+  checkUniquePk(ROMS_CONFIG.SHEETS.TABLES_SEATS, 'seat_id');
+  const orderIds = checkUniquePk(ROMS_CONFIG.SHEETS.ORDERS, 'order_id');
+
+  // Check MenuItems integer VND prices
+  const menuSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.MENU_ITEMS);
+  if (menuSheet && menuSheet.getLastRow() >= 2) {
+    const mRows = menuSheet.getDataRange().getValues();
+    const priceCol = mRows[0].indexOf('price_vnd');
+    for (let r = 1; r < mRows.length; r += 1) {
+      if (!String(mRows[r][0] || '').trim()) continue;
+      const p = Number(mRows[r][priceCol]);
+      if (!Number.isInteger(p) || p < 0) {
+        errors.push('Invalid price_vnd in MenuItems row ' + (r + 1));
+      }
+    }
+  }
+
+  // Check OrderItems -> Orders referential integrity
+  const itemsSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.ORDER_ITEMS);
+  if (itemsSheet && itemsSheet.getLastRow() >= 2) {
+    const iRows = itemsSheet.getDataRange().getValues();
+    const oidCol = iRows[0].indexOf('order_id');
+    for (let r = 1; r < iRows.length; r += 1) {
+      if (!String(iRows[r][0] || '').trim()) continue;
+      const oid = String(iRows[r][oidCol] || '').trim();
+      if (!orderIds[oid]) {
+        errors.push('Orphan OrderItem at row ' + (r + 1) + ' referencing missing order_id: ' + oid);
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors: errors };
 }
 
 function updateSettingValue_(ss, key, value) {

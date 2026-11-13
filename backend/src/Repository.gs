@@ -235,19 +235,32 @@ function persistOrderAtomically_(ss, orderRecord, itemRecords, idempotencyRecord
   });
 
   const orderStartRow = ordersSheet.getLastRow() + 1;
-  ordersSheet.getRange(orderStartRow, 1, 1, orderRowValues.length).setValues([orderRowValues]);
+  const itemStartRow = itemsSheet.getLastRow() + 1;
+  const idempStartRow = idempSheet.getLastRow() + 1;
+  let orderWritten = false;
+  let itemsWritten = false;
+  let idempWritten = false;
 
   try {
-    const itemStartRow = itemsSheet.getLastRow() + 1;
+    ordersSheet.getRange(orderStartRow, 1, 1, orderRowValues.length).setValues([orderRowValues]);
+    orderWritten = true;
+
     itemsSheet
       .getRange(itemStartRow, 1, itemRowsValues.length, itemHeaders.length)
       .setValues(itemRowsValues);
+    itemsWritten = true;
 
-    idempSheet.appendRow(mapRecordToHeaders_(idempHeaders, idempotencyRecord));
-    auditSheet.appendRow(mapRecordToHeaders_(auditHeaders, auditRecord));
+    const idempRowValues = mapRecordToHeaders_(idempHeaders, idempotencyRecord);
+    idempSheet.getRange(idempStartRow, 1, 1, idempRowValues.length).setValues([idempRowValues]);
+    idempWritten = true;
+
+    const auditStartRow = auditSheet.getLastRow() + 1;
+    const auditRowValues = mapRecordToHeaders_(auditHeaders, auditRecord);
+    auditSheet.getRange(auditStartRow, 1, 1, auditRowValues.length).setValues([auditRowValues]);
+
     SpreadsheetApp.flush();
 
-    // Database write verification
+    // Post-flush database write verification
     const writtenOrderId = String(ordersSheet.getRange(orderStartRow, 1).getValue());
     if (writtenOrderId !== orderRecord.order_id) {
       throw new Error('Order write verification failed for ' + orderRecord.order_id);
@@ -260,16 +273,32 @@ function persistOrderAtomically_(ss, orderRecord, itemRecords, idempotencyRecord
         throw new Error('OrderItem write verification failed for ' + orderRecord.order_id);
       }
     }
+    const writtenIdempKey = String(idempSheet.getRange(idempStartRow, 1).getValue());
+    if (writtenIdempKey !== idempotencyRecord.idempotency_key) {
+      throw new Error('IdempotencyKey write verification failed for ' + orderRecord.order_id);
+    }
   } catch (err) {
-    // Roll back Orders row on partial write failure so no orphan order exists
+    // Roll back in reverse order so no orphan rows remain
     try {
-      if (ordersSheet.getLastRow() >= orderStartRow) {
-        const maybeId = String(ordersSheet.getRange(orderStartRow, 1).getValue());
-        if (maybeId === orderRecord.order_id) {
-          ordersSheet.deleteRow(orderStartRow);
-          SpreadsheetApp.flush();
+      if (idempWritten && idempSheet.getLastRow() >= idempStartRow) {
+        if (String(idempSheet.getRange(idempStartRow, 1).getValue()) === idempotencyRecord.idempotency_key) {
+          idempSheet.deleteRow(idempStartRow);
         }
       }
+      if (itemsWritten && itemsSheet.getLastRow() >= itemStartRow) {
+        for (let idx = itemRowsValues.length - 1; idx >= 0; idx -= 1) {
+          const rowPos = itemStartRow + idx;
+          if (itemsSheet.getLastRow() >= rowPos && String(itemsSheet.getRange(rowPos, 2).getValue()) === orderRecord.order_id) {
+            itemsSheet.deleteRow(rowPos);
+          }
+        }
+      }
+      if (orderWritten && ordersSheet.getLastRow() >= orderStartRow) {
+        if (String(ordersSheet.getRange(orderStartRow, 1).getValue()) === orderRecord.order_id) {
+          ordersSheet.deleteRow(orderStartRow);
+        }
+      }
+      SpreadsheetApp.flush();
     } catch (rollbackErr) {
       // Best-effort rollback
     }

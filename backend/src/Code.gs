@@ -1,19 +1,16 @@
 /**
- * ROMS V1.0 - Google Apps Script Web App Entrypoint (Phase 1)
+ * ROMS V1.0 - Google Apps Script Web App Entrypoint (Phase 1.5 Hardened)
  *
- * Cross-domain CORS note:
- * - Frontend sends POST requests with Content-Type: text/plain;charset=utf-8
- *   containing a JSON string body to avoid CORS preflight OPTIONS requests,
- *   which GAS Web Apps do not support.
+ * Security & CORS design:
+ * - GET is restricted to public ?action=health (never accepts passcodes or tokens in query strings).
+ * - All authenticated reads (bootstrap, menu, modifiers) and writes (createOrder) use POST
+ *   with Content-Type: text/plain;charset=utf-8 to avoid CORS OPTIONS preflight.
+ * - POST { action: "login", passcode } exchanges STAFF_PASSCODE for a 6-hour session_token
+ *   stored in CacheService.getScriptCache().
  */
 
 /**
- * Handles HTTP GET requests.
- * Supported actions:
- * - ?action=health (public liveness check)
- * - ?action=bootstrap&passcode=... (full menu, modifiers, seats, settings)
- * - ?action=menu&passcode=... (menu items & topping price)
- * - ?action=modifiers&passcode=... (active modifiers)
+ * Handles HTTP GET requests (public health check only).
  * @param {GoogleAppsScript.Events.DoGet} e
  * @return {GoogleAppsScript.Content.TextOutput}
  */
@@ -39,37 +36,14 @@ function doGet(e) {
       });
     }
 
-    if (!isAuthorizedRequest_(params.passcode)) {
+    if (action === 'bootstrap' || action === 'menu' || action === 'modifiers') {
       return jsonResponse_({
         ok: false,
         data: null,
-        error: { code: 'UNAUTHORIZED', message: 'Invalid or missing staff passcode.' },
-      });
-    }
-
-    const ss = getDatabaseSpreadsheet();
-
-    if (action === 'bootstrap') {
-      return jsonResponse_({
-        ok: true,
-        data: handleGetBootstrap_(ss),
-        error: null,
-      });
-    }
-
-    if (action === 'menu') {
-      return jsonResponse_({
-        ok: true,
-        data: handleGetMenu_(ss),
-        error: null,
-      });
-    }
-
-    if (action === 'modifiers') {
-      return jsonResponse_({
-        ok: true,
-        data: handleGetModifiers_(ss),
-        error: null,
+        error: {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'Use POST for "' + action + '" so credentials are never sent in URL query strings.',
+        },
       });
     }
 
@@ -89,7 +63,6 @@ function doGet(e) {
 
 /**
  * Handles HTTP POST requests.
- * Acquires a script lock for all state-mutating operations.
  * @param {GoogleAppsScript.Events.DoPost} e
  * @return {GoogleAppsScript.Content.TextOutput}
  */
@@ -106,7 +79,15 @@ function doPost(e) {
     });
   }
 
-  const action = sanitizeText(payload && payload.action, 40);
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return jsonResponse_({
+      ok: false,
+      data: null,
+      error: { code: 'BAD_REQUEST', message: 'Request body must be a JSON object.' },
+    });
+  }
+
+  const action = sanitizeText(payload.action, 40);
   if (!action) {
     return jsonResponse_({
       ok: false,
@@ -115,11 +96,19 @@ function doPost(e) {
     });
   }
 
-  if (!isAuthorizedRequest_(payload.passcode)) {
+  if (action === 'login') {
+    return handleLogin_(payload.passcode);
+  }
+
+  const authCheck = isAuthorizedPost_(payload);
+  if (!authCheck.authorized) {
     return jsonResponse_({
       ok: false,
       data: null,
-      error: { code: 'UNAUTHORIZED', message: 'Invalid or missing staff passcode.' },
+      error: {
+        code: authCheck.code,
+        message: authCheck.message,
+      },
     });
   }
 
@@ -133,6 +122,25 @@ function doPost(e) {
       },
       error: null,
     });
+  }
+
+  if (action === 'bootstrap' || action === 'menu' || action === 'modifiers') {
+    try {
+      const ss = getDatabaseSpreadsheet();
+      const data =
+        action === 'bootstrap'
+          ? handleGetBootstrap_(ss)
+          : action === 'menu'
+            ? handleGetMenu_(ss)
+            : handleGetModifiers_(ss);
+      return jsonResponse_({ ok: true, data: data, error: null });
+    } catch (err) {
+      return jsonResponse_({
+        ok: false,
+        data: null,
+        error: { code: 'INTERNAL_ERROR', message: err.message || 'Unexpected server error' },
+      });
+    }
   }
 
   if (action !== 'createOrder') {
@@ -191,12 +199,97 @@ function doPost(e) {
 }
 
 /**
+ * Exchanges a valid STAFF_PASSCODE for a short-lived session_token in CacheService.
+ * @param {string=} providedPasscode
+ * @return {GoogleAppsScript.Content.TextOutput}
+ */
+function handleLogin_(providedPasscode) {
+  if (!isValidPasscode_(providedPasscode)) {
+    return jsonResponse_({
+      ok: false,
+      data: null,
+      error: { code: 'UNAUTHORIZED', message: 'Mã nhân viên không đúng hoặc chưa được cấu hình.' },
+    });
+  }
+
+  const token = Utilities.getUuid() + '-' + Utilities.getUuid().slice(0, 8);
+  const ttl = ROMS_CONFIG.SESSION_TTL_SECONDS;
+  const expiresAtMs = Date.now() + ttl * 1000;
+  const sessionRecord = {
+    created_at: formatLocalTimestamp(),
+    expires_at_ms: expiresAtMs,
+  };
+
+  const cache = CacheService.getScriptCache();
+  cache.put('SESSION_' + token, JSON.stringify(sessionRecord), ttl);
+
+  return jsonResponse_({
+    ok: true,
+    data: {
+      session_token: token,
+      expires_at: formatLocalTimestamp(new Date(expiresAtMs)),
+      expires_at_ms: expiresAtMs,
+      ttl_seconds: ttl,
+    },
+    error: null,
+  });
+}
+
+/**
+ * Verifies either a valid session_token in CacheService or a valid passcode in POST body.
+ * @param {Object} payload
+ * @return {{ authorized: boolean, code?: string, message?: string }}
+ */
+function isAuthorizedPost_(payload) {
+  const token = sanitizeText(payload && payload.session_token, 128);
+  if (token) {
+    const cache = CacheService.getScriptCache();
+    const raw = cache.get('SESSION_' + token);
+    if (!raw) {
+      return {
+        authorized: false,
+        code: 'SESSION_EXPIRED',
+        message: 'Phiên làm việc đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.',
+      };
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed.expires_at_ms || Date.now() > Number(parsed.expires_at_ms)) {
+        cache.remove('SESSION_' + token);
+        return {
+          authorized: false,
+          code: 'SESSION_EXPIRED',
+          message: 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.',
+        };
+      }
+      return { authorized: true };
+    } catch (err) {
+      return {
+        authorized: false,
+        code: 'SESSION_EXPIRED',
+        message: 'Phiên làm việc không hợp lệ. Vui lòng đăng nhập lại.',
+      };
+    }
+  }
+
+  if (payload && payload.passcode && isValidPasscode_(payload.passcode)) {
+    return { authorized: true };
+  }
+
+  return {
+    authorized: false,
+    code: 'UNAUTHORIZED',
+    message: 'Thiếu thông tin xác thực hoặc mã nhân viên không hợp lệ.',
+  };
+}
+
+/**
  * Checks staff passcode against Script Properties STAFF_PASSCODE.
- * Never logs passcodes. Rejects all protected requests if STAFF_PASSCODE is unset.
+ * Never logs passcodes. Rejects all requests if STAFF_PASSCODE is unset.
  * @param {string=} providedPasscode
  * @return {boolean}
  */
-function isAuthorizedRequest_(providedPasscode) {
+function isValidPasscode_(providedPasscode) {
   const props = PropertiesService.getScriptProperties();
   const expected = props.getProperty('STAFF_PASSCODE');
   if (!expected) {
