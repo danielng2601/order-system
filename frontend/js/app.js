@@ -28,6 +28,20 @@
     currentDetail: null,
     splitOrderData: null,
     orderFilters: { order_type: '', table_number: '', seat_id: '', order_number: '' },
+    historyFilters: {
+      date_preset: 'today',
+      date_from: '',
+      date_to: '',
+      status: '',
+      payment_status: '',
+      order_type: '',
+      table_number: '',
+      search: '',
+      page: 1,
+    },
+    historyData: null,
+    reportData: null,
+    selectedPayMethod: 'CASH',
   };
 
   let syncManager = null;
@@ -76,6 +90,8 @@
       loadFloorState();
     } else if (state.connected && tabName === 'orders') {
       loadActiveOrders();
+    } else if (state.connected && tabName === 'history') {
+      loadHistoryAndReports();
     }
   }
 
@@ -85,6 +101,7 @@
     const modalSeatSel = el('modal-seat-select');
     const filterTableSel = el('filter-table-num');
     const filterSeatSel = el('filter-seat-id');
+    const histTableSel = el('hist-filter-table');
 
     if (tableSel) {
       tableSel.innerHTML = '';
@@ -115,6 +132,16 @@
         opt.value = String(t);
         opt.textContent = 'Bàn ' + t;
         filterTableSel.appendChild(opt);
+      }
+    }
+
+    if (histTableSel) {
+      histTableSel.innerHTML = '<option value="">Tất cả bàn</option>';
+      for (let t = 1; t <= 9; t += 1) {
+        const opt = document.createElement('option');
+        opt.value = String(t);
+        opt.textContent = 'Bàn ' + t;
+        histTableSel.appendChild(opt);
       }
     }
 
@@ -511,6 +538,10 @@
           o.order_type === 'DINE_IN'
             ? 'Bàn: ' + (o.table_numbers.length ? o.table_numbers.join(', ') : '-')
             : 'Mang về';
+        const payBadge =
+          o.payment_status === 'Paid'
+            ? '<span class="chip badge-paid">Đã thu · ' + fmt.escapeHtml(o.payment_method || 'Paid') + '</span>'
+            : '<span class="chip badge-unpaid">Chưa thu</span>';
         return (
           '<article class="order-card">' +
           '<div class="order-card-left">' +
@@ -526,7 +557,9 @@
           fmt.escapeHtml(o.status) +
           '</span> <span class="chip">' +
           fmt.escapeHtml(tablesStr) +
-          '</span></div>' +
+          '</span> ' +
+          payBadge +
+          '</div>' +
           '<div class="muted-small">' +
           o.item_count +
           ' dòng món · v' +
@@ -574,12 +607,25 @@
     if (!d) return;
     const o = d.order;
     const isDineIn = o.order_type === 'DINE_IN';
+    const isPaid = o.payment_status === 'Paid';
+    const isActive = o.status === 'Draft' || o.status === 'Confirmed';
+    const canMutate = isActive && !isPaid;
 
     el('detail-order-title').textContent = (o.order_number || o.order_id) + ' — ' + fmt.formatVnd(o.total_vnd);
     el('detail-order-sub').textContent =
-      (isDineIn ? 'Tại bàn' : 'Mang về') + ' · Trạng thái: ' + o.status + ' · v' + o.version;
+      (isDineIn ? 'Tại bàn' : 'Mang về') +
+      ' · Trạng thái: ' +
+      o.status +
+      ' · Thanh toán: ' +
+      (isPaid ? 'Đã thanh toán (' + (o.payment_method || '') + ')' : 'Chưa thanh toán') +
+      ' · v' +
+      o.version;
 
-    el('detail-split-btn').disabled = d.items.length < 2;
+    el('detail-cancel-btn').hidden = !canMutate;
+    el('detail-split-btn').hidden = !canMutate;
+    el('detail-split-btn').disabled = !canMutate || d.items.length < 2;
+    el('detail-add-items-btn').hidden = !canMutate;
+    el('detail-pay-btn').hidden = !canMutate;
 
     const seatOptionsHtml = (function () {
       let opts = '';
@@ -616,13 +662,37 @@
             if (it.topping_units > 0) extraParts.push('+' + it.topping_units + ' topping');
             if (it.custom_note) extraParts.push('Ghi chú: ' + it.custom_note);
 
-            const moveControl = isDineIn
-              ? '<select class="select-touch move-seat-sel" data-move-item-id="' +
-                fmt.escapeHtml(it.order_item_id) +
-                '" aria-label="Chuyển ghế">' +
-                seatOptionsHtml +
-                '</select>'
-              : '';
+            let actionsHtml = '';
+            if (canMutate) {
+              const idEsc = fmt.escapeHtml(it.order_item_id);
+              const moveControl = isDineIn
+                ? '<select class="select-touch move-seat-sel" data-move-item-id="' +
+                  idEsc +
+                  '" aria-label="Chuyển ghế">' +
+                  seatOptionsHtml +
+                  '</select>'
+                : '';
+              actionsHtml =
+                '<div class="detail-item-actions">' +
+                '<button type="button" class="btn btn-sm" data-item-qty-dec="' +
+                idEsc +
+                '"' +
+                (it.quantity <= 1 ? ' disabled' : '') +
+                ' aria-label="Giảm SL">−</button>' +
+                '<button type="button" class="btn btn-sm" data-item-qty-inc="' +
+                idEsc +
+                '" aria-label="Tăng SL">+</button>' +
+                '<button type="button" class="btn btn-sm" data-item-edit="' +
+                idEsc +
+                '">Sửa</button>' +
+                '<button type="button" class="btn btn-sm btn-danger-ghost" data-item-remove="' +
+                idEsc +
+                '"' +
+                (d.items.length <= 1 ? ' disabled' : '') +
+                '>Xóa</button>' +
+                moveControl +
+                '</div>';
+            }
 
             return (
               '<div class="detail-item-row">' +
@@ -638,7 +708,7 @@
                 ? '<div class="muted-small">' + fmt.escapeHtml(extraParts.join(' · ')) + '</div>'
                 : '') +
               '</div>' +
-              moveControl +
+              actionsHtml +
               '</div>'
             );
           })
@@ -662,7 +732,64 @@
         ? '<p class="muted-small">Nguồn gốc: ' + fmt.escapeHtml(o.parent_order_ids.join(', ')) + '</p>'
         : '';
 
-    el('detail-modal-body').innerHTML = lineageHtml + groupsHtml;
+    let paymentInfoHtml = '';
+    if (d.payment) {
+      paymentInfoHtml =
+        '<div class="group-box">' +
+        '<div class="group-box-head"><span>Thông tin thanh toán</span><span class="badge-paid">Đã thanh toán</span></div>' +
+        '<div class="muted-small">Mã GD: ' +
+        fmt.escapeHtml(d.payment.payment_id) +
+        ' · Phương thức: <strong>' +
+        fmt.escapeHtml(d.payment.payment_method) +
+        '</strong> · Số tiền: <strong>' +
+        fmt.escapeHtml(fmt.formatVnd(d.payment.amount_vnd)) +
+        '</strong> · Lúc: ' +
+        fmt.escapeHtml(d.payment.created_at) +
+        (d.payment.reference_note ? ' · Ghi chú: ' + fmt.escapeHtml(d.payment.reference_note) : '') +
+        '</div></div>';
+    }
+
+    let cancelInfoHtml = '';
+    if (o.status === 'Cancelled') {
+      cancelInfoHtml =
+        '<div class="group-box">' +
+        '<div class="group-box-head"><span>Thông tin hủy đơn</span><span class="badge-cancelled">Cancelled</span></div>' +
+        '<div class="muted-small">Lý do: <strong>' +
+        fmt.escapeHtml(o.cancel_reason || 'Không có') +
+        '</strong> · Lúc: ' +
+        fmt.escapeHtml(o.cancelled_at || o.updated_at || '') +
+        '</div></div>';
+    }
+
+    let auditHtml = '';
+    if (d.auditHistory && d.auditHistory.length > 0) {
+      auditHtml =
+        '<div class="group-box">' +
+        '<div class="group-box-head"><span>Nhật ký thao tác (' +
+        d.auditHistory.length +
+        ')</span></div>' +
+        '<div class="audit-list">' +
+        d.auditHistory
+          .slice(0, 15)
+          .map(function (a) {
+            return (
+              '<div class="audit-row">' +
+              '<span><strong>' +
+              fmt.escapeHtml(a.action) +
+              '</strong> (' +
+              fmt.escapeHtml(a.actor) +
+              ')</span>' +
+              '<span class="muted-small">' +
+              fmt.escapeHtml(a.timestamp) +
+              '</span>' +
+              '</div>'
+            );
+          })
+          .join('') +
+        '</div></div>';
+    }
+
+    el('detail-modal-body').innerHTML = lineageHtml + paymentInfoHtml + cancelInfoHtml + groupsHtml + auditHtml;
 
     // Set current seat value on each move-seat dropdown
     el('detail-modal-body')
@@ -753,28 +880,54 @@
     el('split-modal').hidden = false;
   }
 
-  /* ================= ITEM & CHECKOUT MODALS (PHASE 1 + ADD MODE) ================= */
-  function openItemModal(mode, menuItem, existingLine) {
-    const isDineIn = cart.getState().orderType === 'DINE_IN';
+  /* ================= ITEM & CHECKOUT MODALS (PHASE 1 + ADD MODE + PHASE 3B EDIT) ================= */
+  function openItemModal(mode, menuItem, existingLine, orderContext) {
+    const isOrderEdit = mode === 'order-item-edit';
+    const isDineIn = isOrderEdit
+      ? Boolean(orderContext && orderContext.orderType === 'DINE_IN')
+      : cart.getState().orderType === 'DINE_IN';
+    const selectedModIds = existingLine
+      ? isOrderEdit
+        ? (existingLine.modifiers || []).map(function (m) {
+            return typeof m === 'string' ? m : m.modifier_id;
+          })
+        : (existingLine.modifier_ids || []).slice()
+      : [];
+    const toppingPrice = isOrderEdit && existingLine && existingLine.topping_unit_price_vnd !== undefined
+      ? Number(existingLine.topping_unit_price_vnd)
+      : state.toppingUnitPriceVnd;
+
     state.modalContext = {
       mode: mode,
       menuItem: menuItem,
-      cartLineId: existingLine ? existingLine.cart_line_id : null,
-      quantity: existingLine ? existingLine.quantity : 1,
-      toppingUnits: existingLine ? existingLine.topping_units : 0,
-      selectedModIds: existingLine ? existingLine.modifier_ids.slice() : [],
+      isDineIn: isDineIn,
+      toppingPrice: toppingPrice,
+      cartLineId: !isOrderEdit && existingLine ? existingLine.cart_line_id : null,
+      orderId: isOrderEdit && orderContext ? orderContext.orderId : null,
+      orderItemId: isOrderEdit && existingLine ? existingLine.order_item_id : null,
+      expectedVersion: isOrderEdit && orderContext ? orderContext.expectedVersion : null,
+      quantity: existingLine ? Number(existingLine.quantity || 1) : 1,
+      toppingUnits: existingLine ? Number(existingLine.topping_units || 0) : 0,
+      selectedModIds: selectedModIds,
       seatId: existingLine && existingLine.seat_id ? existingLine.seat_id : getActiveSeatId(),
-      customNote: existingLine ? existingLine.custom_note : '',
+      customNote: existingLine ? existingLine.custom_note || '' : '',
     };
 
     el('item-modal-title').textContent = menuItem.name;
     el('item-modal-price').textContent = fmt.formatVnd(menuItem.price_vnd) + ' / phần';
     el('modal-topping-label').textContent =
-      'Thêm topping (' + fmt.formatVnd(state.toppingUnitPriceVnd) + ' / phần)';
+      'Thêm topping (' + fmt.formatVnd(toppingPrice) + ' / phần)';
     el('modal-seat-field').hidden = !isDineIn;
-    el('modal-seat-select').value = state.modalContext.seatId;
+    if (isDineIn) {
+      el('modal-seat-select').value = state.modalContext.seatId;
+    }
     el('modal-note-input').value = state.modalContext.customNote;
-    el('item-modal-save').textContent = mode === 'edit' ? 'Lưu thay đổi' : 'Thêm vào giỏ';
+    el('item-modal-save').disabled = false;
+    el('item-modal-save').textContent = isOrderEdit
+      ? 'Lưu cập nhật món'
+      : mode === 'edit'
+      ? 'Lưu thay đổi'
+      : 'Thêm vào giỏ';
 
     const modList = el('modal-modifiers-list');
     modList.innerHTML = state.modifiers
@@ -802,9 +955,10 @@
   function updateModalPreview() {
     if (!state.modalContext) return;
     const mc = state.modalContext;
+    const toppingPrice = mc.toppingPrice !== undefined ? mc.toppingPrice : state.toppingUnitPriceVnd;
     el('modal-qty-val').textContent = String(mc.quantity);
     el('modal-top-val').textContent = String(mc.toppingUnits);
-    const toppingPerItem = mc.toppingUnits * state.toppingUnitPriceVnd;
+    const toppingPerItem = mc.toppingUnits * toppingPrice;
     el('modal-top-subtotal').textContent = '+' + fmt.formatVnd(toppingPerItem * mc.quantity);
     const lineTotal = (mc.menuItem.price_vnd + toppingPerItem) * mc.quantity;
     el('modal-line-total').textContent = fmt.formatVnd(lineTotal);
@@ -815,7 +969,7 @@
     el('item-modal').hidden = true;
   }
 
-  function saveItemModal() {
+  async function saveItemModal() {
     if (!state.modalContext) return;
     const mc = state.modalContext;
     const checkedBoxes = el('modal-modifiers-list').querySelectorAll('input[type="checkbox"]:checked');
@@ -834,9 +988,47 @@
       }
     });
 
-    const isDineIn = cart.getState().orderType === 'DINE_IN';
+    const isDineIn = mc.isDineIn !== undefined ? mc.isDineIn : cart.getState().orderType === 'DINE_IN';
     const seatId = isDineIn ? el('modal-seat-select').value : '';
     const customNote = el('modal-note-input').value;
+
+    if (mc.mode === 'order-item-edit' && mc.orderId && mc.orderItemId) {
+      const saveBtn = el('item-modal-save');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Đang lưu...';
+      try {
+        const res = await api.updateOrderItem({
+          idempotency_key: fmt.generateUuid(),
+          order_id: mc.orderId,
+          order_item_id: mc.orderItemId,
+          expected_version: mc.expectedVersion,
+          quantity: mc.quantity,
+          topping_units: mc.toppingUnits,
+          modifier_ids: modIds,
+          custom_note: customNote,
+          seat_id: isDineIn ? seatId : '',
+        });
+        if (!res || !res.ok) {
+          global.alert((res && res.error && res.error.message) || 'Không thể cập nhật món.');
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Lưu cập nhật món';
+          return;
+        }
+        if (syncManager && res.data && res.data.syncRevision) {
+          syncManager.setRevision(res.data.syncRevision);
+        }
+        const orderId = mc.orderId;
+        closeItemModal();
+        await openOrderDetail(orderId);
+        if (state.activeTab === 'floor') loadFloorState();
+        if (state.activeTab === 'orders') loadActiveOrders();
+      } catch (err) {
+        global.alert(err.message || 'Lỗi cập nhật món.');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Lưu cập nhật món';
+      }
+      return;
+    }
 
     if (mc.mode === 'edit' && mc.cartLineId) {
       cart.updateItem(mc.cartLineId, {
@@ -1058,6 +1250,407 @@
     }
   }
 
+  /* ================= PHASE 3A & 3B: PAYMENT & CANCELLATION MODALS ================= */
+  function setPaymentMethod(method) {
+    state.selectedPayMethod = method === 'BANK' ? 'BANK' : 'CASH';
+    el('pay-method-cash').classList.toggle('active', state.selectedPayMethod === 'CASH');
+    el('pay-method-bank').classList.toggle('active', state.selectedPayMethod === 'BANK');
+  }
+
+  function openPaymentModal() {
+    const d = state.currentDetail;
+    if (!d) return;
+    const o = d.order;
+    if (o.payment_status === 'Paid' || (o.status !== 'Draft' && o.status !== 'Confirmed')) return;
+    setPaymentMethod('CASH');
+    el('payment-order-summary').innerHTML =
+      '<div><strong>Đơn hàng:</strong> ' +
+      fmt.escapeHtml(o.order_number || o.order_id) +
+      ' (' +
+      (o.order_type === 'DINE_IN' ? 'Tại bàn ' + (o.table_numbers.join(', ') || '') : 'Mang về') +
+      ')</div><div><strong>Số tiền cần thu:</strong> <span class="confirmed-total">' +
+      fmt.escapeHtml(fmt.formatVnd(o.total_vnd)) +
+      '</span></div>';
+    el('payment-ref-input').value = '';
+    el('payment-error').hidden = true;
+    el('payment-confirm-btn').disabled = false;
+    el('payment-confirm-btn').textContent = 'Xác nhận đã thu tiền';
+    el('payment-modal').hidden = false;
+  }
+
+  async function submitPayment() {
+    if (!state.currentDetail) return;
+    const o = state.currentDetail.order;
+    const btn = el('payment-confirm-btn');
+    const errEl = el('payment-error');
+    btn.disabled = true;
+    btn.textContent = 'Đang xử lý...';
+    errEl.hidden = true;
+    try {
+      const res = await api.settlePayment({
+        idempotency_key: fmt.generateUuid(),
+        order_id: o.order_id,
+        expected_version: o.version,
+        payment_method: state.selectedPayMethod,
+        reference_note: el('payment-ref-input').value,
+      });
+      if (!res || !res.ok) {
+        throw new Error((res && res.error && res.error.message) || 'Thanh toán thất bại.');
+      }
+      if (syncManager && res.data && res.data.syncRevision) {
+        syncManager.setRevision(res.data.syncRevision);
+      }
+      el('payment-modal').hidden = true;
+      await openOrderDetail(o.order_id);
+      if (state.activeTab === 'floor') loadFloorState();
+      if (state.activeTab === 'orders') loadActiveOrders();
+      if (state.activeTab === 'history') loadHistoryAndReports();
+    } catch (err) {
+      errEl.textContent = err.message || 'Lỗi thanh toán.';
+      errEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = 'Xác nhận đã thu tiền';
+    }
+  }
+
+  function openCancelModal() {
+    const d = state.currentDetail;
+    if (!d) return;
+    const o = d.order;
+    if (o.payment_status === 'Paid' || (o.status !== 'Draft' && o.status !== 'Confirmed')) return;
+    el('cancel-order-summary').innerHTML =
+      '<div><strong>Đơn hàng:</strong> ' +
+      fmt.escapeHtml(o.order_number || o.order_id) +
+      ' · ' +
+      fmt.escapeHtml(fmt.formatVnd(o.total_vnd)) +
+      '</div><div class="muted-small">Đơn hàng sau khi hủy vẫn được lưu trong lịch sử.</div>';
+    el('cancel-reason-input').value = '';
+    el('cancel-error').hidden = true;
+    el('cancel-confirm-btn').disabled = false;
+    el('cancel-confirm-btn').textContent = 'Xác nhận hủy đơn';
+    el('cancel-modal').hidden = false;
+  }
+
+  async function submitCancelOrder() {
+    if (!state.currentDetail) return;
+    const o = state.currentDetail.order;
+    const reason = el('cancel-reason-input').value.trim();
+    const errEl = el('cancel-error');
+    const btn = el('cancel-confirm-btn');
+    if (reason.length < 2) {
+      errEl.textContent = 'Vui lòng nhập lý do hủy đơn (tối thiểu 2 ký tự).';
+      errEl.hidden = false;
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Đang hủy...';
+    errEl.hidden = true;
+    try {
+      const res = await api.cancelOrder({
+        idempotency_key: fmt.generateUuid(),
+        order_id: o.order_id,
+        expected_version: o.version,
+        cancel_reason: reason,
+      });
+      if (!res || !res.ok) {
+        throw new Error((res && res.error && res.error.message) || 'Hủy đơn thất bại.');
+      }
+      if (syncManager && res.data && res.data.syncRevision) {
+        syncManager.setRevision(res.data.syncRevision);
+      }
+      el('cancel-modal').hidden = true;
+      el('order-detail-modal').hidden = true;
+      if (state.activeTab === 'floor') loadFloorState();
+      if (state.activeTab === 'orders') loadActiveOrders();
+      if (state.activeTab === 'history') loadHistoryAndReports();
+    } catch (err) {
+      errEl.textContent = err.message || 'Lỗi hủy đơn.';
+      errEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = 'Xác nhận hủy đơn';
+    }
+  }
+
+  /* ================= PHASE 3C & 3D: HISTORY, REPORTS & CSV EXPORT ================= */
+  async function loadHistoryAndReports() {
+    const hf = state.historyFilters;
+    const dateFilter = {
+      date_preset: hf.date_preset,
+      date_from: hf.date_from,
+      date_to: hf.date_to,
+    };
+    try {
+      const [repRes, histRes] = await Promise.all([
+        api.getReports({ filters: dateFilter }),
+        api.listOrderHistory({
+          filters: Object.assign({}, hf),
+          page: hf.page,
+          page_size: 25,
+        }),
+      ]);
+      if (repRes && repRes.ok) {
+        state.reportData = repRes.data;
+        renderReports();
+      }
+      if (histRes && histRes.ok) {
+        state.historyData = histRes.data;
+        renderHistoryList();
+        if (syncManager && histRes.data.syncRevision) {
+          syncManager.setRevision(histRes.data.syncRevision);
+        }
+      }
+    } catch (err) {
+      el('history-orders-list').innerHTML =
+        '<p class="inline-error">' + fmt.escapeHtml(err.message || 'Lỗi tải lịch sử & báo cáo.') + '</p>';
+    }
+  }
+
+  function renderReports() {
+    const r = state.reportData;
+    if (!r || !r.summary) return;
+    const s = r.summary;
+    el('report-range-label').textContent =
+      'Khoảng ngày: ' + (r.dateFrom || 'Tất cả') + (r.dateTo && r.dateTo !== r.dateFrom ? ' → ' + r.dateTo : '') + ' (Asia/Ho_Chi_Minh)';
+
+    el('report-kpi-grid').innerHTML =
+      '<div class="kpi-card"><div class="kpi-label">Tổng đơn hợp lệ</div><div class="kpi-value">' +
+      s.total_orders +
+      '</div><div class="muted-small">Tại bàn: ' +
+      s.dine_in_orders +
+      ' · Mang về: ' +
+      s.takeaway_orders +
+      '</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Giá trị đơn hàng</div><div class="kpi-value">' +
+      fmt.escapeHtml(fmt.formatVnd(s.total_order_value_vnd)) +
+      '</div><div class="muted-small">TB: ' +
+      fmt.escapeHtml(fmt.formatVnd(s.average_order_value_vnd)) +
+      ' / đơn</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Thực thu (Payments)</div><div class="kpi-value">' +
+      fmt.escapeHtml(fmt.formatVnd(s.total_collected_vnd)) +
+      '</div><div class="muted-small">Đã TT: ' +
+      s.paid_orders +
+      ' · Chưa TT: ' +
+      s.unpaid_orders +
+      '</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Tiền mặt / Chuyển khoản</div><div class="kpi-value">' +
+      fmt.escapeHtml(fmt.formatVnd(s.cash_collected_vnd)) +
+      '</div><div class="muted-small">CK: ' +
+      fmt.escapeHtml(fmt.formatVnd(s.bank_collected_vnd)) +
+      ' · Hủy: ' +
+      s.cancelled_orders +
+      '</div></div>';
+
+    const chartBox = el('report-chart-box');
+    const days = r.dailyBreakdown || [];
+    if (days.length === 0) {
+      chartBox.hidden = true;
+      return;
+    }
+    const maxVal = Math.max(
+      1,
+      days.reduce(function (m, d) {
+        return Math.max(m, Number(d.collected_vnd || 0), Number(d.order_value_vnd || 0));
+      }, 0)
+    );
+    chartBox.hidden = false;
+    chartBox.innerHTML =
+      '<h4>Doanh thu theo ngày (CASH vs BANK)</h4>' +
+      days
+        .map(function (d) {
+          const cashPct = Math.round((Number(d.cash_collected_vnd || 0) / maxVal) * 100);
+          const bankPct = Math.round((Number(d.bank_collected_vnd || 0) / maxVal) * 100);
+          return (
+            '<div class="bar-row">' +
+            '<span class="bar-date">' +
+            fmt.escapeHtml(d.date) +
+            '</span>' +
+            '<div class="bar-track">' +
+            '<div class="bar-fill-cash" style="width:' +
+            cashPct +
+            '%" title="CASH: ' +
+            fmt.escapeHtml(fmt.formatVnd(d.cash_collected_vnd)) +
+            '"></div>' +
+            '<div class="bar-fill-bank" style="width:' +
+            bankPct +
+            '%" title="BANK: ' +
+            fmt.escapeHtml(fmt.formatVnd(d.bank_collected_vnd)) +
+            '"></div>' +
+            '</div>' +
+            '<span class="bar-val">' +
+            fmt.escapeHtml(fmt.formatVnd(d.collected_vnd)) +
+            ' (' +
+            d.order_count +
+            ' đơn)</span>' +
+            '</div>'
+          );
+        })
+        .join('');
+  }
+
+  function renderHistoryList() {
+    const hd = state.historyData;
+    const container = el('history-orders-list');
+    const pagBar = el('history-pagination');
+    if (!hd || !hd.orders || hd.orders.length === 0) {
+      container.innerHTML = '<p class="muted-small">Không có đơn hàng nào phù hợp bộ lọc.</p>';
+      pagBar.hidden = true;
+      return;
+    }
+
+    container.innerHTML = hd.orders
+      .map(function (o) {
+        const isDineIn = o.order_type === 'DINE_IN';
+        const statusCls = o.status === 'Cancelled' ? 'badge-cancelled' : 'badge-unpaid';
+        const payCls = o.payment_status === 'Paid' ? 'badge-paid' : 'badge-unpaid';
+        const payText = o.payment_status === 'Paid' ? 'Paid (' + (o.payment_method || '') + ')' : 'Unpaid';
+        return (
+          '<article class="order-row-card">' +
+          '<div class="order-row-main">' +
+          '<div><strong>' +
+          fmt.escapeHtml(o.order_number || o.order_id) +
+          '</strong> · ' +
+          (isDineIn ? 'Bàn ' + fmt.escapeHtml(o.table_numbers.join(', ') || '-') : 'Mang về') +
+          ' <span class="' +
+          statusCls +
+          '">' +
+          fmt.escapeHtml(o.status) +
+          '</span> <span class="' +
+          payCls +
+          '">' +
+          fmt.escapeHtml(payText) +
+          '</span></div>' +
+          '<div class="muted-small">' +
+          fmt.escapeHtml(o.created_at) +
+          ' · ' +
+          (o.item_count || 0) +
+          ' món' +
+          (o.cancel_reason ? ' · Lý do hủy: ' + fmt.escapeHtml(o.cancel_reason) : '') +
+          '</div>' +
+          '</div>' +
+          '<div class="header-actions">' +
+          '<strong>' +
+          fmt.escapeHtml(fmt.formatVnd(o.total_vnd)) +
+          '</strong>' +
+          '<button type="button" class="btn btn-sm btn-primary" data-open-order="' +
+          fmt.escapeHtml(o.order_id) +
+          '">Chi tiết</button>' +
+          '</div>' +
+          '</article>'
+        );
+      })
+      .join('');
+
+    pagBar.hidden = hd.totalPages <= 1;
+    el('hist-page-label').textContent = 'Trang ' + hd.page + ' / ' + hd.totalPages + ' (' + hd.total + ' đơn)';
+    el('hist-prev-btn').disabled = hd.page <= 1;
+    el('hist-next-btn').disabled = hd.page >= hd.totalPages;
+  }
+
+  function downloadCsv(filename, csvContent) {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportOrdersCsv() {
+    try {
+      const res = await api.listOrderHistory({
+        filters: Object.assign({}, state.historyFilters),
+        page: 1,
+        page_size: 100,
+      });
+      if (!res || !res.ok) return;
+      const headers = [
+        'Mã đơn',
+        'ID',
+        'Loại',
+        'Bàn',
+        'Trạng thái',
+        'Thanh toán',
+        'Phương thức',
+        'Tổng tiền (VND)',
+        'Tạo lúc',
+        'Lý do hủy',
+        'Ghi chú',
+      ];
+      const rows = res.data.orders.map(function (o) {
+        return [
+          o.order_number,
+          o.order_id,
+          o.order_type,
+          (o.table_numbers || []).join(';'),
+          o.status,
+          o.payment_status,
+          o.payment_method || '',
+          o.total_vnd,
+          o.created_at,
+          o.cancel_reason || '',
+          o.notes || '',
+        ];
+      });
+      const stamp = (res.data.dateFrom || 'all') + '_' + (res.data.dateTo || 'all');
+      downloadCsv('roms-orders-' + stamp + '.csv', fmt.buildCsv(headers, rows));
+    } catch (err) {
+      global.alert(err.message || 'Lỗi xuất CSV đơn hàng.');
+    }
+  }
+
+  function exportPaymentsCsv() {
+    const r = state.reportData;
+    if (!r || !r.payments) return;
+    const headers = ['Mã GD', 'Order ID', 'Mã đơn', 'Số tiền (VND)', 'Phương thức', 'Trạng thái', 'Ghi chú', 'Thời gian', 'Người thu'];
+    const rows = r.payments.map(function (p) {
+      return [
+        p.payment_id,
+        p.order_id,
+        p.order_number || '',
+        p.amount_vnd,
+        p.payment_method,
+        p.payment_status,
+        p.reference_note || '',
+        p.created_at,
+        p.created_by || '',
+      ];
+    });
+    const stamp = (r.dateFrom || 'all') + '_' + (r.dateTo || 'all');
+    downloadCsv('roms-payments-' + stamp + '.csv', fmt.buildCsv(headers, rows));
+  }
+
+  function exportReportCsv() {
+    const r = state.reportData;
+    if (!r || !r.summary) return;
+    const headers = ['Ngày', 'Số đơn hợp lệ', 'Giá trị đơn (VND)', 'Thực thu (VND)', 'Tiền mặt (VND)', 'Chuyển khoản (VND)', 'Đơn hủy'];
+    const rows = (r.dailyBreakdown || []).map(function (d) {
+      return [
+        d.date,
+        d.order_count,
+        d.order_value_vnd,
+        d.collected_vnd,
+        d.cash_collected_vnd,
+        d.bank_collected_vnd,
+        d.cancelled_count,
+      ];
+    });
+    const s = r.summary;
+    rows.push([
+      'TỔNG CỘNG',
+      s.total_orders,
+      s.total_order_value_vnd,
+      s.total_collected_vnd,
+      s.cash_collected_vnd,
+      s.bank_collected_vnd,
+      s.cancelled_orders,
+    ]);
+    const stamp = (r.dateFrom || 'all') + '_' + (r.dateTo || 'all');
+    downloadCsv('roms-report-' + stamp + '.csv', fmt.buildCsv(headers, rows));
+  }
+
   function bindEvents() {
     document.querySelectorAll('.nav-tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -1088,6 +1681,7 @@
       if (syncManager) syncManager.pollOnce();
       if (state.activeTab === 'floor') loadFloorState();
       if (state.activeTab === 'orders') loadActiveOrders();
+      if (state.activeTab === 'history') loadHistoryAndReports();
     });
 
     el('floor-refresh-btn').addEventListener('click', loadFloorState);
@@ -1323,7 +1917,94 @@
       }
     });
 
+    el('detail-modal-body').addEventListener('click', async function (e) {
+      if (!state.currentDetail) return;
+      const order = state.currentDetail.order;
+      const decBtn = e.target.closest('button[data-item-qty-dec]');
+      const incBtn = e.target.closest('button[data-item-qty-inc]');
+      const editBtn = e.target.closest('button[data-item-edit]');
+      const remBtn = e.target.closest('button[data-item-remove]');
+
+      if (decBtn || incBtn) {
+        const btn = decBtn || incBtn;
+        if (btn.disabled) return;
+        const itemId = btn.getAttribute(decBtn ? 'data-item-qty-dec' : 'data-item-qty-inc');
+        const it = state.currentDetail.items.find(function (x) {
+          return x.order_item_id === itemId;
+        });
+        if (!it) return;
+        const nextQty = decBtn ? it.quantity - 1 : it.quantity + 1;
+        if (nextQty < 1 || nextQty > 100) return;
+        btn.disabled = true;
+        try {
+          const res = await api.updateOrderItem({
+            idempotency_key: fmt.generateUuid(),
+            order_id: order.order_id,
+            order_item_id: itemId,
+            expected_version: order.version,
+            quantity: nextQty,
+          });
+          if (!res || !res.ok) {
+            global.alert((res && res.error && res.error.message) || 'Không thể cập nhật số lượng.');
+          } else if (syncManager && res.data && res.data.syncRevision) {
+            syncManager.setRevision(res.data.syncRevision);
+          }
+          await openOrderDetail(order.order_id);
+          if (state.activeTab === 'floor') loadFloorState();
+          if (state.activeTab === 'orders') loadActiveOrders();
+        } catch (err) {
+          global.alert(err.message || 'Lỗi cập nhật số lượng.');
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (editBtn) {
+        const itemId = editBtn.getAttribute('data-item-edit');
+        const it = state.currentDetail.items.find(function (x) {
+          return x.order_item_id === itemId;
+        });
+        if (!it) return;
+        const menuItem = state.menuItems.find(function (m) {
+          return m.item_id === it.item_id;
+        }) || { item_id: it.item_id, name: it.item_name_snapshot, price_vnd: it.unit_price_vnd };
+        openItemModal('order-item-edit', menuItem, it, {
+          orderId: order.order_id,
+          orderType: order.order_type,
+          expectedVersion: order.version,
+        });
+        return;
+      }
+
+      if (remBtn && !remBtn.disabled) {
+        const itemId = remBtn.getAttribute('data-item-remove');
+        if (!global.confirm('Bạn có chắc muốn xóa món này khỏi đơn hàng?')) return;
+        remBtn.disabled = true;
+        try {
+          const res = await api.removeOrderItem({
+            idempotency_key: fmt.generateUuid(),
+            order_id: order.order_id,
+            order_item_id: itemId,
+            expected_version: order.version,
+          });
+          if (!res || !res.ok) {
+            global.alert((res && res.error && res.error.message) || 'Không thể xóa món.');
+          } else if (syncManager && res.data && res.data.syncRevision) {
+            syncManager.setRevision(res.data.syncRevision);
+          }
+          await openOrderDetail(order.order_id);
+          if (state.activeTab === 'floor') loadFloorState();
+          if (state.activeTab === 'orders') loadActiveOrders();
+        } catch (err) {
+          global.alert(err.message || 'Lỗi xóa món.');
+          remBtn.disabled = false;
+        }
+      }
+    });
+
     el('detail-split-btn').addEventListener('click', openSplitModal);
+    el('detail-pay-btn').addEventListener('click', openPaymentModal);
+    el('detail-cancel-btn').addEventListener('click', openCancelModal);
 
     /* Merge Modal */
     el('open-merge-btn').addEventListener('click', openMergeModal);
@@ -1441,6 +2122,87 @@
     el('checkout-submit-btn').addEventListener('click', submitCheckout);
     el('start-new-order-btn').addEventListener('click', function () { el('checkout-modal').hidden = true; });
 
+    /* Payment Modal (Phase 3A) */
+    el('payment-modal-close').addEventListener('click', function () { el('payment-modal').hidden = true; });
+    el('payment-cancel-btn').addEventListener('click', function () { el('payment-modal').hidden = true; });
+    el('pay-method-cash').addEventListener('click', function () { setPaymentMethod('CASH'); });
+    el('pay-method-bank').addEventListener('click', function () { setPaymentMethod('BANK'); });
+    el('payment-confirm-btn').addEventListener('click', submitPayment);
+
+    /* Cancel Order Modal (Phase 3B) */
+    el('cancel-modal-close').addEventListener('click', function () { el('cancel-modal').hidden = true; });
+    el('cancel-back-btn').addEventListener('click', function () { el('cancel-modal').hidden = true; });
+    el('cancel-confirm-btn').addEventListener('click', submitCancelOrder);
+
+    /* History & Reports (Phase 3C & 3D) */
+    el('history-refresh-btn').addEventListener('click', loadHistoryAndReports);
+    document.querySelectorAll('button[data-date-preset]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const preset = btn.getAttribute('data-date-preset');
+        state.historyFilters.date_preset = preset;
+        state.historyFilters.page = 1;
+        document.querySelectorAll('button[data-date-preset]').forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+        const isCustom = preset === 'custom';
+        el('history-date-from').hidden = !isCustom;
+        el('history-date-to').hidden = !isCustom;
+        el('history-apply-date-btn').hidden = !isCustom;
+        if (!isCustom) {
+          loadHistoryAndReports();
+        }
+      });
+    });
+
+    el('history-apply-date-btn').addEventListener('click', function () {
+      state.historyFilters.date_from = el('history-date-from').value;
+      state.historyFilters.date_to = el('history-date-to').value;
+      state.historyFilters.page = 1;
+      loadHistoryAndReports();
+    });
+
+    ['hist-filter-status', 'hist-filter-payment', 'hist-filter-type', 'hist-filter-table'].forEach(function (id) {
+      el(id).addEventListener('change', function () {
+        state.historyFilters.status = el('hist-filter-status').value;
+        state.historyFilters.payment_status = el('hist-filter-payment').value;
+        state.historyFilters.order_type = el('hist-filter-type').value;
+        state.historyFilters.table_number = el('hist-filter-table').value;
+        state.historyFilters.page = 1;
+        loadHistoryAndReports();
+      });
+    });
+
+    el('hist-filter-search').addEventListener('input', function (e) {
+      state.historyFilters.search = e.target.value;
+      state.historyFilters.page = 1;
+      loadHistoryAndReports();
+    });
+
+    el('hist-prev-btn').addEventListener('click', function () {
+      if (state.historyFilters.page > 1) {
+        state.historyFilters.page -= 1;
+        loadHistoryAndReports();
+      }
+    });
+
+    el('hist-next-btn').addEventListener('click', function () {
+      if (state.historyData && state.historyFilters.page < state.historyData.totalPages) {
+        state.historyFilters.page += 1;
+        loadHistoryAndReports();
+      }
+    });
+
+    el('history-orders-list').addEventListener('click', function (e) {
+      const openBtn = e.target.closest('button[data-open-order]');
+      if (openBtn) {
+        openOrderDetail(openBtn.getAttribute('data-open-order'));
+      }
+    });
+
+    el('export-orders-csv-btn').addEventListener('click', exportOrdersCsv);
+    el('export-payments-csv-btn').addEventListener('click', exportPaymentsCsv);
+    el('export-report-csv-btn').addEventListener('click', exportReportCsv);
+
     document.addEventListener('visibilitychange', function () {
       if (syncManager) syncManager.setPaused(document.hidden);
     });
@@ -1467,7 +2229,14 @@
       onRemoteChange: function () {
         if (state.activeTab === 'floor') loadFloorState();
         if (state.activeTab === 'orders') loadActiveOrders();
-        if (state.currentDetail && !el('order-detail-modal').hidden) {
+        if (state.activeTab === 'history') loadHistoryAndReports();
+        if (
+          state.currentDetail &&
+          !el('order-detail-modal').hidden &&
+          el('payment-modal').hidden &&
+          el('cancel-modal').hidden &&
+          el('item-modal').hidden
+        ) {
           openOrderDetail(state.currentDetail.order.order_id);
         }
       },

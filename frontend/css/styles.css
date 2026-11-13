@@ -931,3 +931,116 @@ body {
 .detail-item-row:last-child {
   border-bottom: none;
 }
+
+/* ================= PHASE 3: PAYMENT, HISTORY & REPORTS ================= */
+.badge-paid {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+  font-weight: 600;
+}
+
+.badge-unpaid {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-weight: 600;
+}
+
+.badge-cancelled {
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-weight: 600;
+}
+
+.report-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 720px) {
+  .report-kpi-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.kpi-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.kpi-val {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.kpi-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.report-chart-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 120px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+.bar-track {
+  background: var(--bg);
+  border-radius: 6px;
+  height: 14px;
+  overflow: hidden;
+}
+
+.bar-fill-cash {
+  background: #16a34a;
+  height: 100%;
+}
+
+.bar-fill-bank {
+  background: #2563eb;
+  height: 100%;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.detail-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.audit-list {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}

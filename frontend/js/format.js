@@ -42,9 +42,28 @@
     });
   }
 
+  function escapeCsvCell(value) {
+    if (value === null || value === undefined) return '';
+    const str = String(value);
+    if (/[",\r\n]/.test(str)) {
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  }
+
+  function buildCsv(headers, rows) {
+    const lines = [headers.map(escapeCsvCell).join(',')];
+    rows.forEach(function (row) {
+      lines.push(row.map(escapeCsvCell).join(','));
+    });
+    return '\uFEFF' + lines.join('\r\n');
+  }
+
   return {
     formatVnd: formatVnd,
     escapeHtml: escapeHtml,
     generateUuid: generateUuid,
+    escapeCsvCell: escapeCsvCell,
+    buildCsv: buildCsv,
   };
 });

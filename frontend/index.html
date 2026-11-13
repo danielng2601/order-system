@@ -181,11 +181,67 @@
     <div id="active-orders-list" class="orders-list"></div>
   </section>
 
-  <!-- TAB 4: LỊCH SỬ (PHASE 3 PLACEHOLDER) -->
+  <!-- TAB 4: LỊCH SỬ & BÁO CÁO (PHASE 3) -->
   <section id="tab-history" class="tab-view page-container" hidden>
-    <div class="empty-state">
-      <h2>Lịch sử đơn hàng &amp; Thanh toán</h2>
-      <p>Tính năng thanh toán (Unpaid/Paid), xem lại đơn đã hoàn tất và báo cáo thuộc <strong>Phase 3</strong>.</p>
+    <div class="section-header">
+      <div>
+        <h2>Lịch sử đơn hàng &amp; Báo cáo</h2>
+        <p id="report-range-label" class="muted-small">Hôm nay (Asia/Ho_Chi_Minh)</p>
+      </div>
+      <div class="header-actions">
+        <button id="export-orders-csv-btn" type="button" class="btn btn-sm">Xuất CSV Đơn</button>
+        <button id="export-payments-csv-btn" type="button" class="btn btn-sm">Xuất CSV Thu tiền</button>
+        <button id="export-report-csv-btn" type="button" class="btn btn-sm">Xuất CSV Báo cáo</button>
+        <button id="history-refresh-btn" type="button" class="btn">Làm mới</button>
+      </div>
+    </div>
+
+    <!-- Date Range Bar -->
+    <div class="filters-bar">
+      <div class="order-type-group" role="group" aria-label="Khoảng thời gian">
+        <button type="button" class="seg-btn active" data-date-preset="today">Hôm nay</button>
+        <button type="button" class="seg-btn" data-date-preset="yesterday">Hôm qua</button>
+        <button type="button" class="seg-btn" data-date-preset="custom">Tùy chọn</button>
+      </div>
+      <input id="history-date-from" type="date" class="select-touch" hidden aria-label="Từ ngày" />
+      <input id="history-date-to" type="date" class="select-touch" hidden aria-label="Đến ngày" />
+      <button id="history-apply-date-btn" type="button" class="btn btn-primary" hidden>Áp dụng</button>
+    </div>
+
+    <!-- Report Summary Cards -->
+    <div id="report-kpi-grid" class="report-kpi-grid"></div>
+    <div id="report-chart-box" class="report-chart-box" hidden></div>
+
+    <!-- History Filters -->
+    <div class="filters-bar">
+      <select id="hist-filter-status" class="select-touch" aria-label="Lọc trạng thái đơn">
+        <option value="">Tất cả trạng thái</option>
+        <option value="Confirmed">Confirmed</option>
+        <option value="Draft">Draft</option>
+        <option value="Cancelled">Cancelled</option>
+        <option value="Merged">Merged</option>
+      </select>
+      <select id="hist-filter-payment" class="select-touch" aria-label="Lọc thanh toán">
+        <option value="">Tất cả thanh toán</option>
+        <option value="Paid">Đã thanh toán (Paid)</option>
+        <option value="Unpaid">Chưa thanh toán (Unpaid)</option>
+      </select>
+      <select id="hist-filter-type" class="select-touch" aria-label="Lọc loại đơn">
+        <option value="">Tất cả loại</option>
+        <option value="DINE_IN">Tại bàn</option>
+        <option value="TAKEAWAY">Mang về</option>
+      </select>
+      <select id="hist-filter-table" class="select-touch" aria-label="Lọc theo bàn">
+        <option value="">Tất cả bàn</option>
+      </select>
+      <input id="hist-filter-search" type="search" class="select-touch" placeholder="Tìm mã đơn / ghi chú..." aria-label="Tìm lịch sử" />
+    </div>
+
+    <div id="history-orders-list" class="orders-list"></div>
+    <div id="history-pagination" class="pagination-bar" hidden>
+      <button id="hist-prev-btn" type="button" class="btn btn-sm">← Trước</button>
+      <span id="hist-page-label" class="muted-small">Trang 1/1</span>
+      <button id="hist-next-btn" type="button" class="btn btn-sm">Sau →</button>
     </div>
   </section>
 
@@ -283,8 +339,61 @@
       </div>
       <div id="detail-modal-body" class="modal-body"></div>
       <div class="modal-footer">
+        <button id="detail-cancel-btn" type="button" class="btn btn-danger-ghost">Hủy đơn</button>
         <button id="detail-split-btn" type="button" class="btn">Tách đơn</button>
-        <button id="detail-add-items-btn" type="button" class="btn btn-primary">+ Thêm món vào đơn</button>
+        <button id="detail-add-items-btn" type="button" class="btn">+ Thêm món</button>
+        <button id="detail-pay-btn" type="button" class="btn btn-primary">Thanh toán</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment Settlement Modal (Phase 3A) -->
+  <div id="payment-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Thanh toán đơn hàng</h3>
+        <button id="payment-modal-close" type="button" class="btn btn-sm">Đóng</button>
+      </div>
+      <div class="modal-body">
+        <p id="payment-order-summary" class="checkout-meta"></p>
+        <div class="field">
+          <label>Phương thức thanh toán</label>
+          <div class="order-type-group" role="group" aria-label="Phương thức thanh toán">
+            <button id="pay-method-cash" type="button" class="seg-btn active" data-pay-method="CASH">Tiền mặt (CASH)</button>
+            <button id="pay-method-bank" type="button" class="seg-btn" data-pay-method="BANK">Chuyển khoản (BANK)</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="payment-ref-input">Ghi chú / Mã giao dịch (tùy chọn)</label>
+          <input id="payment-ref-input" type="text" maxlength="200" placeholder="VD: Đã nhận đủ, mã GD..." />
+        </div>
+        <p id="payment-error" class="inline-error" hidden></p>
+      </div>
+      <div class="modal-footer">
+        <button id="payment-cancel-btn" type="button" class="btn">Quay lại</button>
+        <button id="payment-confirm-btn" type="button" class="btn btn-primary">Xác nhận đã thu tiền</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cancel Order Modal (Phase 3B) -->
+  <div id="cancel-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Xác nhận hủy đơn hàng</h3>
+        <button id="cancel-modal-close" type="button" class="btn btn-sm">Đóng</button>
+      </div>
+      <div class="modal-body">
+        <p id="cancel-order-summary" class="checkout-meta"></p>
+        <div class="field">
+          <label for="cancel-reason-input">Lý do hủy đơn (bắt buộc)</label>
+          <input id="cancel-reason-input" type="text" maxlength="300" placeholder="VD: Khách đổi ý, đặt nhầm bàn..." />
+        </div>
+        <p id="cancel-error" class="inline-error" hidden></p>
+      </div>
+      <div class="modal-footer">
+        <button id="cancel-back-btn" type="button" class="btn">Quay lại</button>
+        <button id="cancel-confirm-btn" type="button" class="btn btn-primary">Xác nhận hủy đơn</button>
       </div>
     </div>
   </div>

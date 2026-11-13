@@ -224,5 +224,23 @@
     splitOrder: function (payload) {
       return requestPost('splitOrder', payload);
     },
+    settlePayment: function (payload) {
+      return requestPost('settlePayment', payload);
+    },
+    updateOrderItem: function (payload) {
+      return requestPost('updateOrderItem', payload);
+    },
+    removeOrderItem: function (payload) {
+      return requestPost('removeOrderItem', payload);
+    },
+    cancelOrder: function (payload) {
+      return requestPost('cancelOrder', payload);
+    },
+    listOrderHistory: function (payload) {
+      return requestPost('listOrderHistory', payload || {});
+    },
+    getReports: function (payload) {
+      return requestPost('getReports', payload || {});
+    },
   };
 });
