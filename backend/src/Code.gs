@@ -20,6 +20,11 @@ function doGet(e) {
     const action = sanitizeText(params.action || 'health', 40);
 
     if (action === 'health') {
+      const envName =
+        (typeof PropertiesService !== 'undefined' &&
+          PropertiesService.getScriptProperties &&
+          PropertiesService.getScriptProperties().getProperty('ROMS_ENV')) ||
+        'UNSPECIFIED';
       return jsonResponse_({
         ok: true,
         data: {
@@ -27,6 +32,7 @@ function doGet(e) {
           version: ROMS_CONFIG.APP_VERSION,
           schemaVersion: ROMS_CONFIG.SCHEMA_VERSION,
           phase: ROMS_CONFIG.PHASE,
+          environment: String(envName).trim() || 'UNSPECIFIED',
           timezone: ROMS_CONFIG.TIMEZONE,
           currency: ROMS_CONFIG.CURRENCY,
           printerEnabled: ROMS_CONFIG.PRINTER_ENABLED,
