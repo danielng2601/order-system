@@ -1,7 +1,34 @@
 /**
- * ROMS V1.0 - Server-Side Validation & Price Calculation
+ * ROMS V1.0 - Server-Side Validation, Sanitization & Integer VND Price Calculation
  * Pure functions so they can be executed in both GAS and Node.js unit tests.
  */
+
+/**
+ * Strips ASCII control characters, trims whitespace, and truncates to maxLen.
+ * @param {*} value
+ * @param {number=} maxLen
+ * @return {string}
+ */
+function sanitizeText(value, maxLen) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const limit = maxLen || 200;
+  return String(value)
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .trim()
+    .slice(0, limit);
+}
+
+/**
+ * Normalizes boolean flags from Google Sheets (true/'TRUE'/'true').
+ * @param {*} val
+ * @return {boolean}
+ */
+function toBoolean(val) {
+  if (typeof val === 'boolean') return val;
+  return String(val).toLowerCase() === 'true';
+}
 
 /**
  * Validates whether a seat_id matches T1-S1 through T9-S4.
@@ -34,21 +61,28 @@ function parseSeatId(seatId) {
 
 /**
  * Calculates a single order line total in integer VND.
- * Formula: (unit_price_vnd + topping_units * topping_unit_price_vnd) * quantity
- * Modifiers do not change price by default (delta = 0).
+ * Formula: (unit_price_vnd + modifier_delta_sum_vnd + topping_units * topping_unit_price_vnd) * quantity
  * @param {number} unitPriceVnd
  * @param {number} quantity
  * @param {number=} toppingUnits
  * @param {number=} toppingUnitPriceVnd
+ * @param {number=} modifierDeltaSumVnd
  * @return {number}
  */
-function calculateLineTotalVnd(unitPriceVnd, quantity, toppingUnits, toppingUnitPriceVnd) {
+function calculateLineTotalVnd(
+  unitPriceVnd,
+  quantity,
+  toppingUnits,
+  toppingUnitPriceVnd,
+  modifierDeltaSumVnd
+) {
   const price = Number(unitPriceVnd);
   const qty = Number(quantity);
   const toppings = Number(toppingUnits || 0);
   const toppingPrice = Number(
     toppingUnitPriceVnd !== undefined ? toppingUnitPriceVnd : ROMS_CONFIG.TOPPING_UNIT_PRICE_VND
   );
+  const modDelta = Number(modifierDeltaSumVnd || 0);
 
   if (!Number.isInteger(price) || price < 0) {
     throw new Error('Invalid unitPriceVnd: must be a non-negative integer');
@@ -62,8 +96,15 @@ function calculateLineTotalVnd(unitPriceVnd, quantity, toppingUnits, toppingUnit
   if (!Number.isInteger(toppingPrice) || toppingPrice < 0) {
     throw new Error('Invalid toppingUnitPriceVnd: must be a non-negative integer');
   }
+  if (!Number.isInteger(modDelta)) {
+    throw new Error('Invalid modifierDeltaSumVnd: must be an integer');
+  }
 
-  return (price + toppings * toppingPrice) * qty;
+  const unitTotal = price + modDelta + toppings * toppingPrice;
+  if (unitTotal < 0) {
+    throw new Error('Calculated unit total cannot be negative');
+  }
+  return unitTotal * qty;
 }
 
 /**
@@ -88,7 +129,7 @@ function calculateOrderTotalVnd(lineItems) {
  * Validates and normalizes an order payload against server-side menu & modifier catalogs.
  * Client-submitted prices or totals are ignored; server calculates all prices.
  * @param {Object} payload
- * @param {{ menuById: Object, modifiersById: Object, toppingUnitPriceVnd?: number }} catalog
+ * @param {{ menuById: Object, modifiersById: Object, toppingUnitPriceVnd?: number, validSeatsById?: Object }} catalog
  * @return {{ valid: boolean, errors: Array<string>, normalized?: Object }}
  */
 function validateAndPriceOrderPayload(payload, catalog) {
@@ -116,10 +157,13 @@ function validateAndPriceOrderPayload(payload, catalog) {
 
   if (!Array.isArray(payload.items) || payload.items.length === 0) {
     errors.push('items must be a non-empty array');
+  } else if (payload.items.length > ROMS_CONFIG.MAX_ITEMS_PER_ORDER) {
+    errors.push('items cannot exceed ' + ROMS_CONFIG.MAX_ITEMS_PER_ORDER + ' lines per order');
   }
 
   const menuById = (catalog && catalog.menuById) || {};
   const modifiersById = (catalog && catalog.modifiersById) || {};
+  const validSeatsById = (catalog && catalog.validSeatsById) || null;
   const toppingPrice = Number(
     catalog && catalog.toppingUnitPriceVnd !== undefined
       ? catalog.toppingUnitPriceVnd
@@ -128,8 +172,10 @@ function validateAndPriceOrderPayload(payload, catalog) {
 
   const normalizedItems = [];
   const tableNumberSet = {};
+  let baseSubtotalVnd = 0;
+  let toppingSubtotalVnd = 0;
 
-  if (Array.isArray(payload.items)) {
+  if (Array.isArray(payload.items) && payload.items.length <= ROMS_CONFIG.MAX_ITEMS_PER_ORDER) {
     payload.items.forEach(function (rawItem, idx) {
       const prefix = 'items[' + idx + ']';
       if (!rawItem || typeof rawItem !== 'object') {
@@ -137,21 +183,40 @@ function validateAndPriceOrderPayload(payload, catalog) {
         return;
       }
 
-      const menuItem = menuById[rawItem.item_id];
-      if (!menuItem || menuItem.is_active === false) {
-        errors.push(prefix + '.item_id is unknown or inactive');
+      const itemId = sanitizeText(rawItem.item_id, 64);
+      const menuItem = menuById[itemId];
+      if (!menuItem) {
+        errors.push(prefix + '.item_id is unknown: ' + itemId);
+        return;
+      }
+      if (!toBoolean(menuItem.is_active)) {
+        errors.push(prefix + '.item_id is currently sold out: ' + menuItem.name);
         return;
       }
 
       const qty = Number(rawItem.quantity);
-      if (!Number.isInteger(qty) || qty <= 0 || qty > 100) {
-        errors.push(prefix + '.quantity must be an integer between 1 and 100');
+      if (
+        !Number.isInteger(qty) ||
+        qty <= 0 ||
+        qty > ROMS_CONFIG.MAX_QUANTITY_PER_LINE
+      ) {
+        errors.push(
+          prefix + '.quantity must be an integer between 1 and ' + ROMS_CONFIG.MAX_QUANTITY_PER_LINE
+        );
         return;
       }
 
       const toppingUnits = rawItem.topping_units === undefined ? 0 : Number(rawItem.topping_units);
-      if (!Number.isInteger(toppingUnits) || toppingUnits < 0 || toppingUnits > 20) {
-        errors.push(prefix + '.topping_units must be an integer between 0 and 20');
+      if (
+        !Number.isInteger(toppingUnits) ||
+        toppingUnits < 0 ||
+        toppingUnits > ROMS_CONFIG.MAX_TOPPING_UNITS_PER_LINE
+      ) {
+        errors.push(
+          prefix +
+            '.topping_units must be an integer between 0 and ' +
+            ROMS_CONFIG.MAX_TOPPING_UNITS_PER_LINE
+        );
         return;
       }
 
@@ -164,31 +229,60 @@ function validateAndPriceOrderPayload(payload, catalog) {
           return;
         }
         seatId = rawItem.seat_id.trim();
+        if (validSeatsById && (!validSeatsById[seatId] || !toBoolean(validSeatsById[seatId].is_active))) {
+          errors.push(prefix + '.seat_id is inactive or unavailable: ' + seatId);
+          return;
+        }
         const parsed = parseSeatId(seatId);
         tableNumber = parsed.table_number;
         seatNumber = parsed.seat_number;
         tableNumberSet[tableNumber] = true;
       }
 
+      if (rawItem.modifier_ids !== undefined && !Array.isArray(rawItem.modifier_ids)) {
+        errors.push(prefix + '.modifier_ids must be an array');
+        return;
+      }
+
       const rawModifierIds = Array.isArray(rawItem.modifier_ids) ? rawItem.modifier_ids : [];
-      const modifierNames = [];
+      const seenModIds = {};
+      const dedupedModIds = [];
+      const modifierSnapshots = [];
+      let modifierDeltaSum = 0;
+
       for (let m = 0; m < rawModifierIds.length; m += 1) {
-        const modId = rawModifierIds[m];
+        const modId = sanitizeText(rawModifierIds[m], 64);
+        if (seenModIds[modId]) {
+          continue;
+        }
         const mod = modifiersById[modId];
-        if (!mod || mod.is_active === false) {
+        if (!mod || !toBoolean(mod.is_active)) {
           errors.push(prefix + '.modifier_ids contains unknown or inactive modifier: ' + modId);
           return;
         }
-        modifierNames.push(mod.name);
+        seenModIds[modId] = true;
+        dedupedModIds.push(modId);
+        const modDelta = Number(mod.price_delta_vnd || 0);
+        modifierDeltaSum += modDelta;
+        modifierSnapshots.push({
+          modifier_id: mod.modifier_id,
+          name: mod.name,
+          price_delta_vnd: modDelta,
+        });
       }
 
-      const customNote = typeof rawItem.custom_note === 'string' ? rawItem.custom_note.trim().slice(0, 200) : '';
+      const unitPriceVnd = Number(menuItem.price_vnd);
+      const customNote = sanitizeText(rawItem.custom_note, 200);
       const lineTotalVnd = calculateLineTotalVnd(
-        Number(menuItem.price_vnd),
+        unitPriceVnd,
         qty,
         toppingUnits,
-        toppingPrice
+        toppingPrice,
+        modifierDeltaSum
       );
+
+      baseSubtotalVnd += (unitPriceVnd + modifierDeltaSum) * qty;
+      toppingSubtotalVnd += toppingUnits * toppingPrice * qty;
 
       normalizedItems.push({
         seat_id: seatId,
@@ -196,10 +290,13 @@ function validateAndPriceOrderPayload(payload, catalog) {
         seat_number: seatNumber,
         item_id: menuItem.item_id,
         item_name_snapshot: menuItem.name,
-        unit_price_vnd: Number(menuItem.price_vnd),
+        unit_price_vnd: unitPriceVnd,
         quantity: qty,
-        modifier_ids: rawModifierIds,
-        modifiers: modifierNames,
+        modifier_ids: dedupedModIds,
+        modifiers: modifierSnapshots.map(function (ms) {
+          return ms.name;
+        }),
+        modifier_snapshots: modifierSnapshots,
         topping_units: toppingUnits,
         topping_unit_price_vnd: toppingPrice,
         line_total_vnd: lineTotalVnd,
@@ -227,9 +324,11 @@ function validateAndPriceOrderPayload(payload, catalog) {
       status: payload.status || 'Confirmed',
       payment_status: payload.payment_status || 'Unpaid',
       table_numbers: tableNumbers,
+      base_subtotal_vnd: baseSubtotalVnd,
+      topping_subtotal_vnd: toppingSubtotalVnd,
       subtotal_vnd: totalVnd,
       total_vnd: totalVnd,
-      notes: typeof payload.notes === 'string' ? payload.notes.trim().slice(0, 500) : '',
+      notes: sanitizeText(payload.notes, 500),
       items: normalizedItems,
     },
   };
@@ -267,9 +366,34 @@ function generateOrderId(now, randomSuffix) {
     Math.random()
       .toString(36)
       .substring(2, 6)
-      .toUpperCase();
+      .toUpperCase()
+      .padEnd(4, '0');
 
   return 'ORD-' + dateStr + '-' + timeStr + '-' + suffix;
+}
+
+/**
+ * Formats a human-readable daily order number: #YYMMDD-NNN
+ * @param {Date} now
+ * @param {number} sequenceNumber
+ * @return {string}
+ */
+function formatOrderNumber(now, sequenceNumber) {
+  const d = now || new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ROMS_CONFIG.TIMEZONE,
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+
+  const map = {};
+  parts.forEach(function (p) {
+    map[p.type] = p.value;
+  });
+
+  const seq = String(sequenceNumber).padStart(3, '0');
+  return '#' + map.year + map.month + map.day + '-' + seq;
 }
 
 /**

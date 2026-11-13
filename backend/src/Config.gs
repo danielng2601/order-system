@@ -6,7 +6,8 @@
 const ROMS_CONFIG = {
   APP_NAME: 'ROMS',
   APP_VERSION: '1.0.0',
-  PHASE: 'Phase 0',
+  SCHEMA_VERSION: '1.1.0',
+  PHASE: 'Phase 1',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CURRENCY: 'VND',
   TABLE_COUNT: 9,
@@ -15,6 +16,9 @@ const ROMS_CONFIG = {
   TOPPING_UNIT_PRICE_VND: 15000,
   PRINTER_ENABLED: false,
   LOCK_TIMEOUT_MS: 15000,
+  MAX_ITEMS_PER_ORDER: 50,
+  MAX_QUANTITY_PER_LINE: 100,
+  MAX_TOPPING_UNITS_PER_LINE: 20,
   SHEETS: {
     SETTINGS: 'Settings',
     MENU_ITEMS: 'MenuItems',
@@ -41,12 +45,12 @@ const SEED_MENU_ITEMS = [
 ];
 
 const SEED_MODIFIERS = [
-  { modifier_id: 'NO_VEG', name: 'Không rau', price_delta_vnd: 0, is_active: true, sort_order: 1 },
-  { modifier_id: 'NO_MEAT', name: 'Không thịt', price_delta_vnd: 0, is_active: true, sort_order: 2 },
-  { modifier_id: 'NO_SUI_CAO', name: 'Không sủi cảo', price_delta_vnd: 0, is_active: true, sort_order: 3 },
-  { modifier_id: 'NO_FRIED_DUMPLING', name: 'Không sủi rán', price_delta_vnd: 0, is_active: true, sort_order: 4 },
-  { modifier_id: 'MORE_NOODLES', name: 'Nhiều mỳ', price_delta_vnd: 0, is_active: true, sort_order: 5 },
-  { modifier_id: 'LESS_NOODLES', name: 'Ít mỳ', price_delta_vnd: 0, is_active: true, sort_order: 6 },
+  { modifier_id: 'NO_VEG', name: 'Không rau', group_name: 'Tùy chọn món', price_delta_vnd: 0, is_active: true, sort_order: 1 },
+  { modifier_id: 'NO_MEAT', name: 'Không thịt', group_name: 'Tùy chọn món', price_delta_vnd: 0, is_active: true, sort_order: 2 },
+  { modifier_id: 'NO_SUI_CAO', name: 'Không sủi cảo', group_name: 'Tùy chọn món', price_delta_vnd: 0, is_active: true, sort_order: 3 },
+  { modifier_id: 'NO_FRIED_DUMPLING', name: 'Không sủi rán', group_name: 'Tùy chọn món', price_delta_vnd: 0, is_active: true, sort_order: 4 },
+  { modifier_id: 'MORE_NOODLES', name: 'Nhiều mỳ', group_name: 'Lượng mỳ', price_delta_vnd: 0, is_active: true, sort_order: 5 },
+  { modifier_id: 'LESS_NOODLES', name: 'Ít mỳ', group_name: 'Lượng mỳ', price_delta_vnd: 0, is_active: true, sort_order: 6 },
 ];
 
 /**

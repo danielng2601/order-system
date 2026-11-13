@@ -1,15 +1,16 @@
 /**
- * ROMS V1.0 - Google Sheets Database Initialization & Google Drive Backup
+ * ROMS V1.0 - Google Sheets Database Initialization, Safe Migrations & Drive Backup
  * Run setupDatabase() once from the Apps Script editor after configuring SPREADSHEET_ID.
  */
 
 const SCHEMA_HEADERS = {
   Settings: ['key', 'value', 'description'],
   MenuItems: ['item_id', 'name', 'category', 'price_vnd', 'is_active', 'sort_order', 'updated_at'],
-  Modifiers: ['modifier_id', 'name', 'price_delta_vnd', 'is_active', 'sort_order'],
+  Modifiers: ['modifier_id', 'name', 'group_name', 'price_delta_vnd', 'is_active', 'sort_order'],
   TablesSeats: ['seat_id', 'table_number', 'seat_number', 'label', 'is_active'],
   Orders: [
     'order_id',
+    'order_number',
     'order_type',
     'status',
     'payment_status',
@@ -75,7 +76,7 @@ function getDatabaseSpreadsheet() {
 }
 
 /**
- * Formats a Date in Asia/Ho_Chi_Minh ISO-like string.
+ * Formats a Date in Asia/Ho_Chi_Minh ISO-8601 string.
  * @param {Date=} date
  * @return {string}
  */
@@ -88,7 +89,7 @@ function formatLocalTimestamp(date) {
 }
 
 /**
- * Idempotently creates sheets, headers, and initial seed data.
+ * Idempotently creates sheets, headers, migrations, and initial seed data.
  * Safe to re-run without overwriting existing data.
  */
 function setupDatabase() {
@@ -104,16 +105,58 @@ function setupDatabase() {
     if (sheet.getLastRow() === 0) {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       sheet.setFrozenRows(1);
+    } else {
+      ensureSheetColumns_(sheet, headers);
     }
   });
 
   seedSettingsIfEmpty_(ss);
+  updateSettingValue_(ss, 'SchemaVersion', ROMS_CONFIG.SCHEMA_VERSION);
   seedMenuItemsIfEmpty_(ss, nowStr);
   seedModifiersIfEmpty_(ss);
   seedTablesSeatsIfEmpty_(ss);
 
   SpreadsheetApp.flush();
-  return { ok: true, message: 'Database setup completed', timestamp: nowStr };
+  return {
+    ok: true,
+    message: 'Database setup & migration completed',
+    schemaVersion: ROMS_CONFIG.SCHEMA_VERSION,
+    timestamp: nowStr,
+  };
+}
+
+/**
+ * Safely appends any missing schema columns to an existing sheet without moving existing data.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {Array<string>} expectedHeaders
+ */
+function ensureSheetColumns_(sheet, expectedHeaders) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+    sheet.setFrozenRows(1);
+    return;
+  }
+  const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const missing = expectedHeaders.filter(function (col) {
+    return currentHeaders.indexOf(col) === -1;
+  });
+  if (missing.length > 0) {
+    sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+  }
+}
+
+function updateSettingValue_(ss, key, value) {
+  const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r += 1) {
+    if (String(values[r][0]) === key) {
+      sheet.getRange(r + 1, 2).setValue(String(value));
+      return;
+    }
+  }
+  sheet.appendRow([key, String(value), '']);
 }
 
 function seedSettingsIfEmpty_(ss) {
@@ -121,7 +164,7 @@ function seedSettingsIfEmpty_(ss) {
   if (sheet.getLastRow() > 1) return;
 
   const rows = [
-    ['SchemaVersion', '1.0.0', 'Current database schema version'],
+    ['SchemaVersion', ROMS_CONFIG.SCHEMA_VERSION, 'Current database schema version'],
     ['Timezone', ROMS_CONFIG.TIMEZONE, 'Restaurant local timezone'],
     ['Currency', ROMS_CONFIG.CURRENCY, 'Integer VND currency'],
     ['PrinterEnabled', String(ROMS_CONFIG.PRINTER_ENABLED), 'Enable/disable thermal printer'],
@@ -155,9 +198,16 @@ function seedModifiersIfEmpty_(ss) {
   if (sheet.getLastRow() > 1) return;
 
   const rows = SEED_MODIFIERS.map(function (mod) {
-    return [mod.modifier_id, mod.name, mod.price_delta_vnd, mod.is_active, mod.sort_order];
+    return [
+      mod.modifier_id,
+      mod.name,
+      mod.group_name || 'Tùy chọn',
+      mod.price_delta_vnd,
+      mod.is_active,
+      mod.sort_order,
+    ];
   });
-  sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+  sheet.getRange(2, 1, rows.length, 6).setValues(rows);
 }
 
 function seedTablesSeatsIfEmpty_(ss) {
@@ -173,7 +223,6 @@ function seedTablesSeatsIfEmpty_(ss) {
 
 /**
  * Creates a timestamped backup copy of the database spreadsheet in Google Drive.
- * Can be attached to a daily Apps Script time-driven trigger.
  * @return {{ ok: boolean, fileId: string, fileName: string }}
  */
 function backupDatabaseToDrive() {

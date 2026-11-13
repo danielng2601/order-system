@@ -1,5 +1,5 @@
 /**
- * ROMS V1.0 - Google Apps Script Web App Entrypoint (Phase 0)
+ * ROMS V1.0 - Google Apps Script Web App Entrypoint (Phase 1)
  *
  * Cross-domain CORS note:
  * - Frontend sends POST requests with Content-Type: text/plain;charset=utf-8
@@ -9,16 +9,18 @@
 
 /**
  * Handles HTTP GET requests.
- * Supported Phase 0 actions:
+ * Supported actions:
  * - ?action=health (public liveness check)
- * - ?action=bootstrap (requires passcode header/query if STAFF_PASSCODE is configured)
+ * - ?action=bootstrap&passcode=... (full menu, modifiers, seats, settings)
+ * - ?action=menu&passcode=... (menu items & topping price)
+ * - ?action=modifiers&passcode=... (active modifiers)
  * @param {GoogleAppsScript.Events.DoGet} e
  * @return {GoogleAppsScript.Content.TextOutput}
  */
 function doGet(e) {
   try {
     const params = (e && e.parameter) || {};
-    const action = params.action || 'health';
+    const action = sanitizeText(params.action || 'health', 40);
 
     if (action === 'health') {
       return jsonResponse_({
@@ -26,6 +28,7 @@ function doGet(e) {
         data: {
           service: ROMS_CONFIG.APP_NAME,
           version: ROMS_CONFIG.APP_VERSION,
+          schemaVersion: ROMS_CONFIG.SCHEMA_VERSION,
           phase: ROMS_CONFIG.PHASE,
           timezone: ROMS_CONFIG.TIMEZONE,
           currency: ROMS_CONFIG.CURRENCY,
@@ -36,17 +39,36 @@ function doGet(e) {
       });
     }
 
+    if (!isAuthorizedRequest_(params.passcode)) {
+      return jsonResponse_({
+        ok: false,
+        data: null,
+        error: { code: 'UNAUTHORIZED', message: 'Invalid or missing staff passcode.' },
+      });
+    }
+
+    const ss = getDatabaseSpreadsheet();
+
     if (action === 'bootstrap') {
-      if (!isAuthorizedRequest_(params.passcode)) {
-        return jsonResponse_({
-          ok: false,
-          data: null,
-          error: { code: 'UNAUTHORIZED', message: 'Invalid or missing staff passcode.' },
-        });
-      }
       return jsonResponse_({
         ok: true,
-        data: loadBootstrapData_(),
+        data: handleGetBootstrap_(ss),
+        error: null,
+      });
+    }
+
+    if (action === 'menu') {
+      return jsonResponse_({
+        ok: true,
+        data: handleGetMenu_(ss),
+        error: null,
+      });
+    }
+
+    if (action === 'modifiers') {
+      return jsonResponse_({
+        ok: true,
+        data: handleGetModifiers_(ss),
         error: null,
       });
     }
@@ -84,7 +106,7 @@ function doPost(e) {
     });
   }
 
-  const action = payload && payload.action;
+  const action = sanitizeText(payload && payload.action, 40);
   if (!action) {
     return jsonResponse_({
       ok: false,
@@ -113,6 +135,17 @@ function doPost(e) {
     });
   }
 
+  if (action !== 'createOrder') {
+    return jsonResponse_({
+      ok: false,
+      data: null,
+      error: {
+        code: 'NOT_IMPLEMENTED',
+        message: 'Action "' + action + '" is scheduled for Phase 2-3.',
+      },
+    });
+  }
+
   const lock = LockService.getScriptLock();
   try {
     const acquired = lock.tryLock(ROMS_CONFIG.LOCK_TIMEOUT_MS);
@@ -122,19 +155,25 @@ function doPost(e) {
         data: null,
         error: {
           code: 'LOCK_TIMEOUT',
-          message: 'Server is busy processing another order. Please retry.',
+          message: 'Hệ thống đang xử lý đơn khác. Vui lòng thử lại.',
         },
       });
     }
 
-    // Order mutation actions will be implemented in Phase 1–3.
+    const ss = getDatabaseSpreadsheet();
+    const result = handleCreateOrder_(ss, payload);
+    if (result.error) {
+      return jsonResponse_({
+        ok: false,
+        data: null,
+        error: result.error,
+      });
+    }
+
     return jsonResponse_({
-      ok: false,
-      data: null,
-      error: {
-        code: 'NOT_IMPLEMENTED',
-        message: 'Action "' + action + '" is scheduled for Phase 1-3.',
-      },
+      ok: true,
+      data: result.data,
+      error: null,
     });
   } catch (err) {
     return jsonResponse_({
@@ -153,7 +192,7 @@ function doPost(e) {
 
 /**
  * Checks staff passcode against Script Properties STAFF_PASSCODE.
- * If STAFF_PASSCODE is not configured yet, rejects all protected requests (fail-closed).
+ * Never logs passcodes. Rejects all protected requests if STAFF_PASSCODE is unset.
  * @param {string=} providedPasscode
  * @return {boolean}
  */
@@ -164,80 +203,6 @@ function isAuthorizedRequest_(providedPasscode) {
     return false;
   }
   return constantTimeEqual(String(providedPasscode || ''), String(expected));
-}
-
-/**
- * Reads bootstrap catalog data from Google Sheets.
- * @return {Object}
- */
-function loadBootstrapData_() {
-  const ss = getDatabaseSpreadsheet();
-  return {
-    settings: sheetToObjects_(ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS)),
-    menuItems: sheetToObjects_(ss.getSheetByName(ROMS_CONFIG.SHEETS.MENU_ITEMS)).filter(function (
-      row
-    ) {
-      return row.is_active === true || String(row.is_active).toLowerCase() === 'true';
-    }),
-    modifiers: sheetToObjects_(ss.getSheetByName(ROMS_CONFIG.SHEETS.MODIFIERS)).filter(function (
-      row
-    ) {
-      return row.is_active === true || String(row.is_active).toLowerCase() === 'true';
-    }),
-    tablesSeats: sheetToObjects_(ss.getSheetByName(ROMS_CONFIG.SHEETS.TABLES_SEATS)).filter(
-      function (row) {
-        return row.is_active === true || String(row.is_active).toLowerCase() === 'true';
-      }
-    ),
-  };
-}
-
-/**
- * Converts a sheet with header row 1 into an array of objects.
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
- * @return {Array<Object>}
- */
-function sheetToObjects_(sheet) {
-  if (!sheet || sheet.getLastRow() < 2) {
-    return [];
-  }
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0];
-  const rows = [];
-  for (let r = 1; r < values.length; r += 1) {
-    const obj = {};
-    for (let c = 0; c < headers.length; c += 1) {
-      obj[headers[c]] = values[r][c];
-    }
-    rows.push(obj);
-  }
-  return rows;
-}
-
-/**
- * Appends an audit record to AuditLog.
- * @param {string} action
- * @param {string} entityType
- * @param {string} entityId
- * @param {string} actor
- * @param {string} requestId
- * @param {Object} details
- */
-function appendAuditLog_(action, entityType, entityId, actor, requestId, details) {
-  const ss = getDatabaseSpreadsheet();
-  const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.AUDIT_LOG);
-  if (!sheet) return;
-  const logId = 'LOG-' + Utilities.getUuid().slice(0, 8).toUpperCase();
-  sheet.appendRow([
-    logId,
-    formatLocalTimestamp(),
-    action,
-    entityType,
-    entityId,
-    actor || 'staff',
-    requestId || '',
-    JSON.stringify(details || {}),
-  ]);
 }
 
 /**
