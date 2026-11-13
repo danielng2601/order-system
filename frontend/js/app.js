@@ -495,6 +495,10 @@
       el('order-notes-input').value = '';
       renderCart();
     } catch (err) {
+      if (err && (err.code === 'SESSION_EXPIRED' || err.code === 'UNAUTHORIZED')) {
+        setConnectionBadge('Hết phiên', 'error');
+        el('settings-panel').hidden = false;
+      }
       errEl.textContent = err.message || 'Gửi đơn thất bại. Giỏ hàng vẫn được giữ nguyên.';
       errEl.hidden = false;
       btn.disabled = false;
@@ -502,7 +506,7 @@
     }
   }
 
-  async function loadBootstrapFromBackend() {
+  async function loadBootstrapFromBackend(passcodeForLogin) {
     const errEl = el('settings-error');
     const connectBtn = el('connect-btn');
     errEl.hidden = true;
@@ -510,9 +514,21 @@
     connectBtn.textContent = 'Đang kết nối...';
 
     try {
+      if (passcodeForLogin !== undefined && passcodeForLogin !== '') {
+        const loginRes = await api.login(passcodeForLogin);
+        if (!loginRes || !loginRes.ok) {
+          throw new Error(
+            (loginRes && loginRes.error && loginRes.error.message) || 'Đăng nhập thất bại.'
+          );
+        }
+        el('staff-passcode-input').value = '';
+      }
+
       const res = await api.fetchBootstrap();
       if (!res || !res.ok) {
-        throw new Error((res && res.error && res.error.message) || 'Không thể tải thực đơn.');
+        const err = new Error((res && res.error && res.error.message) || 'Không thể tải thực đơn.');
+        err.code = res && res.error && res.error.code;
+        throw err;
       }
       state.connected = true;
       state.menuItems = res.data.menuItems || [];
@@ -529,9 +545,10 @@
       renderMenuGrid();
       renderCart();
     } catch (err) {
-      setConnectionBadge('Lỗi kết nối', 'error');
+      setConnectionBadge(err.code === 'SESSION_EXPIRED' ? 'Hết phiên' : 'Lỗi kết nối', 'error');
       errEl.textContent = err.message || String(err);
       errEl.hidden = false;
+      el('settings-panel').hidden = false;
     } finally {
       connectBtn.disabled = false;
       connectBtn.textContent = 'Kết nối & Tải thực đơn';
@@ -545,11 +562,18 @@
 
     el('connect-btn').addEventListener('click', function () {
       api.setApiUrl(el('gas-url-input').value);
-      api.setPasscode(el('staff-passcode-input').value);
-      loadBootstrapFromBackend();
+      const passcode = el('staff-passcode-input').value;
+      if (!passcode && !api.getSessionToken()) {
+        el('settings-error').textContent = 'Vui lòng nhập mã nhân viên.';
+        el('settings-error').hidden = false;
+        return;
+      }
+      loadBootstrapFromBackend(passcode);
     });
 
-    el('refresh-menu-btn').addEventListener('click', loadBootstrapFromBackend);
+    el('refresh-menu-btn').addEventListener('click', function () {
+      loadBootstrapFromBackend();
+    });
 
     el('type-dinein-btn').addEventListener('click', function () {
       cart.setOrderType('DINE_IN');
@@ -719,14 +743,13 @@
 
   function init() {
     el('gas-url-input').value = api.getApiUrl();
-    el('staff-passcode-input').value = api.getPasscode();
     initSeatSelectors();
     renderOrderTypeUI();
     renderMenuGrid();
     renderCart();
     bindEvents();
 
-    if (api.getPasscode() && api.getApiUrl().indexOf('REPLACE_WITH_DEPLOYMENT_ID') === -1) {
+    if (api.getSessionToken() && api.getApiUrl().indexOf('REPLACE_WITH_DEPLOYMENT_ID') === -1) {
       loadBootstrapFromBackend();
     }
   }
