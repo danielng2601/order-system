@@ -223,8 +223,9 @@ function verifyDatabaseIntegrity(ssOpt) {
 
   checkUniquePk(ROMS_CONFIG.SHEETS.MENU_ITEMS, 'item_id');
   checkUniquePk(ROMS_CONFIG.SHEETS.MODIFIERS, 'modifier_id');
-  checkUniquePk(ROMS_CONFIG.SHEETS.TABLES_SEATS, 'seat_id');
+  const seatIds = checkUniquePk(ROMS_CONFIG.SHEETS.TABLES_SEATS, 'seat_id');
   const orderIds = checkUniquePk(ROMS_CONFIG.SHEETS.ORDERS, 'order_id');
+  checkUniquePk(ROMS_CONFIG.SHEETS.ORDER_ITEMS, 'order_item_id');
 
   // Check MenuItems integer VND prices
   const menuSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.MENU_ITEMS);
@@ -240,18 +241,74 @@ function verifyDatabaseIntegrity(ssOpt) {
     }
   }
 
-  // Check OrderItems -> Orders referential integrity
-  const itemsSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.ORDER_ITEMS);
-  if (itemsSheet && itemsSheet.getLastRow() >= 2) {
-    const iRows = itemsSheet.getDataRange().getValues();
-    const oidCol = iRows[0].indexOf('order_id');
-    for (let r = 1; r < iRows.length; r += 1) {
-      if (!String(iRows[r][0] || '').trim()) continue;
-      const oid = String(iRows[r][oidCol] || '').trim();
-      if (!orderIds[oid]) {
-        errors.push('Orphan OrderItem at row ' + (r + 1) + ' referencing missing order_id: ' + oid);
+  // Load Orders & OrderItems for Phase 2 referential, total, table, and lineage checks
+  const db = loadAllOrdersAndItems_(ss);
+
+  db.orders.forEach(function (ord) {
+    if (ROMS_CONFIG.ORDER_STATUSES.indexOf(ord.status) === -1) {
+      errors.push('Invalid status "' + ord.status + '" on order ' + ord.order_id);
+    }
+    if (ROMS_CONFIG.PAYMENT_STATUSES.indexOf(ord.payment_status) === -1) {
+      errors.push('Invalid payment_status "' + ord.payment_status + '" on order ' + ord.order_id);
+    }
+    if (ord.status === 'Merged') {
+      if (!ord.merged_into_order_id || !db.ordersById[ord.merged_into_order_id]) {
+        errors.push('Merged order ' + ord.order_id + ' has missing or invalid merged_into_order_id: ' + ord.merged_into_order_id);
+      }
+      const itemsOnMerged = db.itemsByOrderId[ord.order_id] || [];
+      if (itemsOnMerged.length > 0) {
+        errors.push('Merged source order ' + ord.order_id + ' still has ' + itemsOnMerged.length + ' assigned OrderItems');
+      }
+    } else {
+      const items = db.itemsByOrderId[ord.order_id] || [];
+      const aggs = computeOrderAggregatesFromItems_(ord.order_type, items);
+      if (ord.total_vnd !== aggs.total_vnd) {
+        errors.push('Order ' + ord.order_id + ' total_vnd (' + ord.total_vnd + ') != sum of items (' + aggs.total_vnd + ')');
+      }
+      const expectedTablesJson = JSON.stringify(aggs.table_numbers);
+      const actualTablesJson = JSON.stringify(Array.isArray(ord.table_numbers) ? ord.table_numbers : []);
+      if (actualTablesJson !== expectedTablesJson) {
+        errors.push('Order ' + ord.order_id + ' table_numbers_json (' + actualTablesJson + ') != derived (' + expectedTablesJson + ')');
       }
     }
+    if (Array.isArray(ord.parent_order_ids)) {
+      ord.parent_order_ids.forEach(function (pid) {
+        if (!db.ordersById[pid]) {
+          errors.push('Order ' + ord.order_id + ' references missing parent_order_id: ' + pid);
+        }
+      });
+    }
+  });
+
+  // Check OrderItems -> Orders FK & seat_id validity
+  Object.keys(db.itemsByOrderId).forEach(function (oid) {
+    const parentOrder = db.ordersById[oid];
+    const items = db.itemsByOrderId[oid];
+    items.forEach(function (it) {
+      if (!parentOrder) {
+        errors.push('Orphan OrderItem ' + it.order_item_id + ' referencing missing order_id: ' + oid);
+        return;
+      }
+      if (parentOrder.order_type === 'DINE_IN') {
+        if (!it.seat_id || !seatIds[it.seat_id]) {
+          errors.push('OrderItem ' + it.order_item_id + ' has invalid seat_id: ' + it.seat_id);
+        }
+      } else if (parentOrder.order_type === 'TAKEAWAY' && it.seat_id) {
+        errors.push('TAKEAWAY OrderItem ' + it.order_item_id + ' should not have seat_id: ' + it.seat_id);
+      }
+    });
+  });
+
+  // Check IdempotencyKeys -> Orders consistency
+  const idempSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.IDEMPOTENCY_KEYS);
+  if (idempSheet && idempSheet.getLastRow() >= 2) {
+    const idempRows = sheetToObjects_(idempSheet);
+    idempRows.forEach(function (row, idx) {
+      const oid = String(row.order_id || '').trim();
+      if (oid && !orderIds[oid]) {
+        errors.push('IdempotencyKeys row ' + (idx + 2) + ' references missing order_id: ' + oid);
+      }
+    });
   }
 
   return { ok: errors.length === 0, errors: errors };

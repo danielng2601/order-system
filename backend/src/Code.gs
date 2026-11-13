@@ -259,7 +259,8 @@ function handleLogin_(providedPasscode) {
 }
 
 /**
- * Verifies either a valid session_token in CacheService or a valid passcode in POST body.
+ * Verifies a valid session_token in CacheService.
+ * Raw passcodes are only accepted on action === "login".
  * @param {Object} payload
  * @return {{ authorized: boolean, code?: string, message?: string }}
  */
@@ -295,14 +296,10 @@ function isAuthorizedPost_(payload) {
     }
   }
 
-  if (payload && payload.passcode && isValidPasscode_(payload.passcode)) {
-    return { authorized: true };
-  }
-
   return {
     authorized: false,
     code: 'UNAUTHORIZED',
-    message: 'Thiếu thông tin xác thực hoặc mã nhân viên không hợp lệ.',
+    message: 'Thiếu session_token hợp lệ. Vui lòng đăng nhập.',
   };
 }
 

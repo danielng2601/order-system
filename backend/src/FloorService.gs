@@ -292,6 +292,14 @@ function handleAddItemsToOrder_(ss, payload) {
       },
     };
   }
+  if (order.payment_status === 'Paid') {
+    return {
+      error: {
+        code: 'INVALID_STATE',
+        message: 'Cannot add items to an already Paid order.',
+      },
+    };
+  }
   if (order.version !== expectedVersion) {
     return {
       error: {
@@ -367,8 +375,10 @@ function handleAddItemsToOrder_(ss, payload) {
     return mapRecordToHeaders_(itemHeaders, it);
   });
   const itemStartRow = itemsSheet.getLastRow() + 1;
+  const idempRowIdx = idempSheet.getLastRow() + 1;
   let itemsWritten = false;
   let orderUpdated = false;
+  let idempWritten = false;
 
   const responseData = {
     order: formatPublicOrder_(updatedOrderRecord, allItems),
@@ -383,15 +393,16 @@ function handleAddItemsToOrder_(ss, payload) {
     writeOrderRowAt_(ordersSheet, order._rowIndex, orderHeaders, updatedOrderRecord);
     orderUpdated = true;
 
-    idempSheet.appendRow(
-      mapRecordToHeaders_(idempHeaders, {
-        idempotency_key: idempotencyKey,
-        action: 'addItemsToOrder',
-        order_id: orderId,
-        response_json: JSON.stringify(responseData),
-        created_at: nowStr,
-      })
-    );
+    const idempValues = mapRecordToHeaders_(idempHeaders, {
+      idempotency_key: idempotencyKey,
+      action: 'addItemsToOrder',
+      order_id: orderId,
+      response_json: JSON.stringify(responseData),
+      created_at: nowStr,
+    });
+    idempSheet.getRange(idempRowIdx, 1, 1, idempHeaders.length).setValues([idempValues]);
+    idempWritten = true;
+
     auditSheet.appendRow(
       mapRecordToHeaders_(auditHeaders, {
         log_id: 'LOG-' + Utilities.getUuid().slice(0, 8).toUpperCase(),
@@ -413,6 +424,9 @@ function handleAddItemsToOrder_(ss, payload) {
     return { data: Object.assign({}, responseData, { syncRevision: syncRevision }) };
   } catch (err) {
     try {
+      if (idempWritten && idempSheet.getLastRow() >= idempRowIdx && String(idempSheet.getRange(idempRowIdx, 1).getValue()) === idempotencyKey) {
+        idempSheet.deleteRow(idempRowIdx);
+      }
       if (orderUpdated) writeOrderRowAt_(ordersSheet, order._rowIndex, orderHeaders, order);
       if (itemsWritten) {
         for (let i = newRowsValues.length - 1; i >= 0; i -= 1) {
@@ -523,23 +537,26 @@ function handleMoveOrderItem_(ss, payload) {
     replayed: false,
   };
 
+  const idempRowIdx = idempSheet.getLastRow() + 1;
   let itemWritten = false;
   let orderWritten = false;
+  let idempWritten = false;
   try {
     writeOrderItemRowAt_(itemsSheet, targetItem._rowIndex, itemHeaders, updatedItem);
     itemWritten = true;
     writeOrderRowAt_(ordersSheet, order._rowIndex, orderHeaders, updatedOrder);
     orderWritten = true;
 
-    idempSheet.appendRow(
-      mapRecordToHeaders_(idempHeaders, {
-        idempotency_key: idempotencyKey,
-        action: 'moveOrderItem',
-        order_id: orderId,
-        response_json: JSON.stringify(responseData),
-        created_at: nowStr,
-      })
-    );
+    const idempValues = mapRecordToHeaders_(idempHeaders, {
+      idempotency_key: idempotencyKey,
+      action: 'moveOrderItem',
+      order_id: orderId,
+      response_json: JSON.stringify(responseData),
+      created_at: nowStr,
+    });
+    idempSheet.getRange(idempRowIdx, 1, 1, idempHeaders.length).setValues([idempValues]);
+    idempWritten = true;
+
     auditSheet.appendRow(
       mapRecordToHeaders_(auditHeaders, {
         log_id: 'LOG-' + Utilities.getUuid().slice(0, 8).toUpperCase(),
@@ -562,6 +579,9 @@ function handleMoveOrderItem_(ss, payload) {
     return { data: Object.assign({}, responseData, { syncRevision: syncRevision }) };
   } catch (err) {
     try {
+      if (idempWritten && idempSheet.getLastRow() >= idempRowIdx && String(idempSheet.getRange(idempRowIdx, 1).getValue()) === idempotencyKey) {
+        idempSheet.deleteRow(idempRowIdx);
+      }
       if (orderWritten) writeOrderRowAt_(ordersSheet, order._rowIndex, orderHeaders, order);
       if (itemWritten) writeOrderItemRowAt_(itemsSheet, targetItem._rowIndex, itemHeaders, targetItem);
       SpreadsheetApp.flush();
@@ -613,6 +633,9 @@ function handleMergeOrders_(ss, payload) {
     if (!isActiveOrderStatus_(order.status)) {
       return { error: { code: 'INVALID_STATE', message: 'Order ' + oid + ' cannot be merged (status: ' + order.status + ').' } };
     }
+    if (order.payment_status === 'Paid') {
+      return { error: { code: 'INVALID_STATE', message: 'Paid order ' + oid + ' cannot be merged.' } };
+    }
     if (order.version !== expVer) {
       return {
         error: {
@@ -650,13 +673,14 @@ function handleMergeOrders_(ss, payload) {
     return o.order_id;
   });
 
-  const combinedItems = [];
+  const originalItems = [];
+  const reassignedItems = [];
   sourceOrders.forEach(function (src) {
     const srcItems = db.itemsByOrderId[src.order_id] || [];
     srcItems.forEach(function (it) {
-      combinedItems.push(
+      originalItems.push(it);
+      reassignedItems.push(
         Object.assign({}, it, {
-          order_item_id: destOrderId + '-L' + String(combinedItems.length + 1).padStart(2, '0'),
           order_id: destOrderId,
           updated_at: nowStr,
         })
@@ -664,11 +688,11 @@ function handleMergeOrders_(ss, payload) {
     });
   });
 
-  if (combinedItems.length === 0) {
+  if (reassignedItems.length === 0) {
     return { error: { code: 'INVALID_STATE', message: 'Cannot merge orders with zero items.' } };
   }
 
-  const aggs = computeOrderAggregatesFromItems_(expectedOrderType, combinedItems);
+  const aggs = computeOrderAggregatesFromItems_(expectedOrderType, reassignedItems);
   const destOrderRecord = {
     order_id: destOrderId,
     order_number: destOrderNumber,
@@ -702,28 +726,28 @@ function handleMergeOrders_(ss, payload) {
   const auditHeaders = auditSheet.getRange(1, 1, 1, auditSheet.getLastColumn()).getValues()[0];
 
   const destOrderRow = ordersSheet.getLastRow() + 1;
-  const destItemsStartRow = itemsSheet.getLastRow() + 1;
-  const destItemsValues = combinedItems.map(function (it) {
-    return mapRecordToHeaders_(itemHeaders, it);
-  });
+  const idempRowIdx = idempSheet.getLastRow() + 1;
 
   const responseData = {
-    order: formatPublicOrder_(destOrderRecord, combinedItems),
-    items: combinedItems,
+    order: formatPublicOrder_(destOrderRecord, reassignedItems),
+    items: reassignedItems,
     mergedSourceOrderIds: sourceIds,
     replayed: false,
   };
 
   let destOrderWritten = false;
-  let destItemsWritten = false;
-  const updatedSourcesCount = [];
+  const movedItemsOrig = [];
+  const updatedSourcesOrig = [];
+  let idempWritten = false;
 
   try {
     writeOrderRowAt_(ordersSheet, destOrderRow, orderHeaders, destOrderRecord);
     destOrderWritten = true;
 
-    itemsSheet.getRange(destItemsStartRow, 1, destItemsValues.length, itemHeaders.length).setValues(destItemsValues);
-    destItemsWritten = true;
+    for (let idx = 0; idx < reassignedItems.length; idx += 1) {
+      writeOrderItemRowAt_(itemsSheet, originalItems[idx]._rowIndex, itemHeaders, reassignedItems[idx]);
+      movedItemsOrig.push(originalItems[idx]);
+    }
 
     sourceOrders.forEach(function (src) {
       const mergedSrc = Object.assign({}, src, {
@@ -733,18 +757,19 @@ function handleMergeOrders_(ss, payload) {
         updated_at: nowStr,
       });
       writeOrderRowAt_(ordersSheet, src._rowIndex, orderHeaders, mergedSrc);
-      updatedSourcesCount.push(src);
+      updatedSourcesOrig.push(src);
     });
 
-    idempSheet.appendRow(
-      mapRecordToHeaders_(idempHeaders, {
-        idempotency_key: idempotencyKey,
-        action: 'mergeOrders',
-        order_id: destOrderId,
-        response_json: JSON.stringify(responseData),
-        created_at: nowStr,
-      })
-    );
+    const idempValues = mapRecordToHeaders_(idempHeaders, {
+      idempotency_key: idempotencyKey,
+      action: 'mergeOrders',
+      order_id: destOrderId,
+      response_json: JSON.stringify(responseData),
+      created_at: nowStr,
+    });
+    idempSheet.getRange(idempRowIdx, 1, 1, idempHeaders.length).setValues([idempValues]);
+    idempWritten = true;
+
     auditSheet.appendRow(
       mapRecordToHeaders_(auditHeaders, {
         log_id: 'LOG-' + Utilities.getUuid().slice(0, 8).toUpperCase(),
@@ -758,6 +783,7 @@ function handleMergeOrders_(ss, payload) {
           source_order_ids: sourceIds,
           destination_order_id: destOrderId,
           destination_order_number: destOrderNumber,
+          reassigned_item_ids: reassignedItems.map(function (it) { return it.order_item_id; }),
           total_vnd: aggs.total_vnd,
         }),
       })
@@ -768,16 +794,15 @@ function handleMergeOrders_(ss, payload) {
     return { data: Object.assign({}, responseData, { syncRevision: syncRevision }) };
   } catch (err) {
     try {
-      updatedSourcesCount.forEach(function (origSrc) {
+      if (idempWritten && idempSheet.getLastRow() >= idempRowIdx && String(idempSheet.getRange(idempRowIdx, 1).getValue()) === idempotencyKey) {
+        idempSheet.deleteRow(idempRowIdx);
+      }
+      updatedSourcesOrig.forEach(function (origSrc) {
         writeOrderRowAt_(ordersSheet, origSrc._rowIndex, orderHeaders, origSrc);
       });
-      if (destItemsWritten) {
-        for (let i = destItemsValues.length - 1; i >= 0; i -= 1) {
-          if (itemsSheet.getLastRow() >= destItemsStartRow + i) {
-            itemsSheet.deleteRow(destItemsStartRow + i);
-          }
-        }
-      }
+      movedItemsOrig.forEach(function (origIt) {
+        writeOrderItemRowAt_(itemsSheet, origIt._rowIndex, itemHeaders, origIt);
+      });
       if (destOrderWritten && ordersSheet.getLastRow() >= destOrderRow) {
         ordersSheet.deleteRow(destOrderRow);
       }
@@ -816,6 +841,9 @@ function handleSplitOrder_(ss, payload) {
   }
   if (!isActiveOrderStatus_(sourceOrder.status)) {
     return { error: { code: 'INVALID_STATE', message: 'Cannot split order with status: ' + sourceOrder.status } };
+  }
+  if (sourceOrder.payment_status === 'Paid') {
+    return { error: { code: 'INVALID_STATE', message: 'Cannot split an already Paid order.' } };
   }
   if (sourceOrder.version !== expectedVersion) {
     return {
@@ -915,8 +943,10 @@ function handleSplitOrder_(ss, payload) {
   const auditHeaders = auditSheet.getRange(1, 1, 1, auditSheet.getLastColumn()).getValues()[0];
 
   const newOrderRow = ordersSheet.getLastRow() + 1;
+  const idempRowIdx = idempSheet.getLastRow() + 1;
   let newOrderWritten = false;
   let sourceUpdated = false;
+  let idempWritten = false;
   const movedItems = [];
 
   const responseData = {
@@ -942,15 +972,16 @@ function handleSplitOrder_(ss, payload) {
     writeOrderRowAt_(ordersSheet, sourceOrder._rowIndex, orderHeaders, updatedSourceOrder);
     sourceUpdated = true;
 
-    idempSheet.appendRow(
-      mapRecordToHeaders_(idempHeaders, {
-        idempotency_key: idempotencyKey,
-        action: 'splitOrder',
-        order_id: newOrderId,
-        response_json: JSON.stringify(responseData),
-        created_at: nowStr,
-      })
-    );
+    const idempValues = mapRecordToHeaders_(idempHeaders, {
+      idempotency_key: idempotencyKey,
+      action: 'splitOrder',
+      order_id: newOrderId,
+      response_json: JSON.stringify(responseData),
+      created_at: nowStr,
+    });
+    idempSheet.getRange(idempRowIdx, 1, 1, idempHeaders.length).setValues([idempValues]);
+    idempWritten = true;
+
     auditSheet.appendRow(
       mapRecordToHeaders_(auditHeaders, {
         log_id: 'LOG-' + Utilities.getUuid().slice(0, 8).toUpperCase(),
@@ -976,6 +1007,9 @@ function handleSplitOrder_(ss, payload) {
     return { data: Object.assign({}, responseData, { syncRevision: syncRevision }) };
   } catch (err) {
     try {
+      if (idempWritten && idempSheet.getLastRow() >= idempRowIdx && String(idempSheet.getRange(idempRowIdx, 1).getValue()) === idempotencyKey) {
+        idempSheet.deleteRow(idempRowIdx);
+      }
       if (sourceUpdated) writeOrderRowAt_(ordersSheet, sourceOrder._rowIndex, orderHeaders, sourceOrder);
       movedItems.forEach(function (origIt) {
         writeOrderItemRowAt_(itemsSheet, origIt._rowIndex, itemHeaders, origIt);

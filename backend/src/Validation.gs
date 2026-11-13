@@ -144,8 +144,8 @@ function validateAndPriceOrderPayload(payload, catalog) {
     errors.push('order_type must be DINE_IN or TAKEAWAY');
   }
 
-  if (payload.status !== undefined && ROMS_CONFIG.ORDER_STATUSES.indexOf(payload.status) === -1) {
-    errors.push('status must be Draft, Confirmed, or Cancelled');
+  if (payload.status !== undefined && ROMS_CONFIG.ACTIVE_ORDER_STATUSES.indexOf(payload.status) === -1) {
+    errors.push('status must be Draft or Confirmed');
   }
 
   if (

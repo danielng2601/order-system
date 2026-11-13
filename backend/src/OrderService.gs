@@ -26,6 +26,7 @@ function handleGetBootstrap_(ss) {
     }),
     toppingUnitPriceVnd: catalog.toppingUnitPriceVnd,
     printerEnabled: PrinterService.isEnabled(catalog.settingsMap),
+    syncRevision: getSyncRevision_(ss),
   };
 }
 
