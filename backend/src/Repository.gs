@@ -433,6 +433,10 @@ function loadAllOrdersAndItems_(ss) {
       merged_into_order_id: String(row.merged_into_order_id || ''),
       parent_order_ids: safeParseJson_(row.parent_order_ids_json, []),
       parent_order_ids_json: String(row.parent_order_ids_json || '[]'),
+      payment_method: String(row.payment_method || ''),
+      cancelled_at: String(row.cancelled_at || ''),
+      cancel_reason: String(row.cancel_reason || ''),
+      cancelled_by: String(row.cancelled_by || ''),
     };
     orders.push(order);
     ordersById[order.order_id] = order;
@@ -443,6 +447,39 @@ function loadAllOrdersAndItems_(ss) {
     ordersById: ordersById,
     itemsByOrderId: itemsByOrderId,
   };
+}
+
+/**
+ * Loads all Payments from the Payments sheet.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @return {{ payments: Array<Object>, paymentsByOrderId: Object }}
+ */
+function loadAllPayments_(ss) {
+  const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.PAYMENTS);
+  const raw = sheetToObjects_(sheet);
+  const payments = [];
+  const paymentsByOrderId = {};
+  raw.forEach(function (row, idx) {
+    if (!String(row.payment_id || '').trim()) return;
+    const p = {
+      _rowIndex: idx + 2,
+      payment_id: String(row.payment_id),
+      order_id: String(row.order_id),
+      amount_vnd: Number(row.amount_vnd || 0),
+      payment_method: String(row.payment_method || ''),
+      payment_status: String(row.payment_status || ''),
+      reference_note: String(row.reference_note || ''),
+      created_at: String(row.created_at || ''),
+      created_by: String(row.created_by || ''),
+      idempotency_key: String(row.idempotency_key || ''),
+    };
+    payments.push(p);
+    if (!paymentsByOrderId[p.order_id]) {
+      paymentsByOrderId[p.order_id] = [];
+    }
+    paymentsByOrderId[p.order_id].push(p);
+  });
+  return { payments: payments, paymentsByOrderId: paymentsByOrderId };
 }
 
 /**

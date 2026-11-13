@@ -6,8 +6,8 @@
 const ROMS_CONFIG = {
   APP_NAME: 'ROMS',
   APP_VERSION: '1.0.0',
-  SCHEMA_VERSION: '1.2.0',
-  PHASE: 'Phase 2',
+  SCHEMA_VERSION: '1.3.0',
+  PHASE: 'Phase 3',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CURRENCY: 'VND',
   TABLE_COUNT: 9,
@@ -28,6 +28,7 @@ const ROMS_CONFIG = {
     TABLES_SEATS: 'TablesSeats',
     ORDERS: 'Orders',
     ORDER_ITEMS: 'OrderItems',
+    PAYMENTS: 'Payments',
     AUDIT_LOG: 'AuditLog',
     IDEMPOTENCY_KEYS: 'IdempotencyKeys',
   },
@@ -35,6 +36,7 @@ const ROMS_CONFIG = {
   ORDER_STATUSES: ['Draft', 'Confirmed', 'Cancelled', 'Merged'],
   ACTIVE_ORDER_STATUSES: ['Draft', 'Confirmed'],
   PAYMENT_STATUSES: ['Unpaid', 'Paid'],
+  PAYMENT_METHODS: ['CASH', 'BANK'],
 };
 
 const SEED_MENU_ITEMS = [

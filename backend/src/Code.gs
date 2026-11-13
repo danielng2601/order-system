@@ -131,7 +131,9 @@ function doPost(e) {
     action === 'syncStatus' ||
     action === 'getFloorState' ||
     action === 'listActiveOrders' ||
-    action === 'getOrderDetail'
+    action === 'getOrderDetail' ||
+    action === 'listOrderHistory' ||
+    action === 'getReports'
   ) {
     try {
       const ss = getDatabaseSpreadsheet();
@@ -149,6 +151,8 @@ function doPost(e) {
       else if (action === 'syncStatus') data = handleGetSyncStatus_(ss);
       else if (action === 'getFloorState') data = handleGetFloorState_(ss);
       else if (action === 'listActiveOrders') data = handleListActiveOrders_(ss, payload.filters);
+      else if (action === 'listOrderHistory') data = handleListOrderHistory_(ss, payload);
+      else if (action === 'getReports') data = handleGetReports_(ss, payload);
       return jsonResponse_({ ok: true, data: data, error: null });
     } catch (err) {
       return jsonResponse_({
@@ -159,14 +163,24 @@ function doPost(e) {
     }
   }
 
-  const writeActions = ['createOrder', 'addItemsToOrder', 'moveOrderItem', 'mergeOrders', 'splitOrder'];
+  const writeActions = [
+    'createOrder',
+    'addItemsToOrder',
+    'moveOrderItem',
+    'mergeOrders',
+    'splitOrder',
+    'settlePayment',
+    'updateOrderItem',
+    'removeOrderItem',
+    'cancelOrder',
+  ];
   if (writeActions.indexOf(action) === -1) {
     return jsonResponse_({
       ok: false,
       data: null,
       error: {
         code: 'NOT_IMPLEMENTED',
-        message: 'Action "' + action + '" is scheduled for Phase 3.',
+        message: 'Action "' + action + '" is scheduled for Phase 4.',
       },
     });
   }
@@ -192,6 +206,10 @@ function doPost(e) {
     else if (action === 'moveOrderItem') result = handleMoveOrderItem_(ss, payload);
     else if (action === 'mergeOrders') result = handleMergeOrders_(ss, payload);
     else if (action === 'splitOrder') result = handleSplitOrder_(ss, payload);
+    else if (action === 'settlePayment') result = handleSettlePayment_(ss, payload);
+    else if (action === 'updateOrderItem') result = handleUpdateOrderItem_(ss, payload);
+    else if (action === 'removeOrderItem') result = handleRemoveOrderItem_(ss, payload);
+    else if (action === 'cancelOrder') result = handleCancelOrder_(ss, payload);
 
     if (result.error) {
       return jsonResponse_({

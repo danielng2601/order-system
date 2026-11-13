@@ -133,6 +133,10 @@ function handleCreateOrder_(ss, payload) {
     created_by: actor,
     merged_into_order_id: '',
     parent_order_ids_json: '[]',
+    payment_method: '',
+    cancelled_at: '',
+    cancel_reason: '',
+    cancelled_by: '',
   };
 
   const itemRecords = norm.items.map(function (item, idx) {

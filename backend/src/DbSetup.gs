@@ -26,6 +26,10 @@ const SCHEMA_HEADERS = {
     'created_by',
     'merged_into_order_id',
     'parent_order_ids_json',
+    'payment_method',
+    'cancelled_at',
+    'cancel_reason',
+    'cancelled_by',
   ],
   OrderItems: [
     'order_item_id',
@@ -44,6 +48,17 @@ const SCHEMA_HEADERS = {
     'custom_note',
     'created_at',
     'updated_at',
+  ],
+  Payments: [
+    'payment_id',
+    'order_id',
+    'amount_vnd',
+    'payment_method',
+    'payment_status',
+    'reference_note',
+    'created_at',
+    'created_by',
+    'idempotency_key',
   ],
   AuditLog: [
     'log_id',
@@ -310,6 +325,47 @@ function verifyDatabaseIntegrity(ssOpt) {
       }
     });
   }
+
+  // Phase 3: Check Payments integrity & Order <-> Payment consistency
+  checkUniquePk(ROMS_CONFIG.SHEETS.PAYMENTS, 'payment_id');
+  const payData = loadAllPayments_(ss);
+  payData.payments.forEach(function (p) {
+    const ord = db.ordersById[p.order_id];
+    if (!ord) {
+      errors.push('Payment ' + p.payment_id + ' references missing order_id: ' + p.order_id);
+      return;
+    }
+    if (!Number.isInteger(p.amount_vnd) || p.amount_vnd <= 0) {
+      errors.push('Payment ' + p.payment_id + ' has invalid amount_vnd: ' + p.amount_vnd);
+    }
+    if (ROMS_CONFIG.PAYMENT_METHODS.indexOf(p.payment_method) === -1) {
+      errors.push('Payment ' + p.payment_id + ' has invalid payment_method: ' + p.payment_method);
+    }
+    if (ord.status === 'Cancelled' || ord.status === 'Merged') {
+      errors.push('Payment ' + p.payment_id + ' linked to ' + ord.status + ' order: ' + ord.order_id);
+    }
+  });
+
+  db.orders.forEach(function (ord) {
+    const ordPayments = (payData.paymentsByOrderId[ord.order_id] || []).filter(function (p) {
+      return p.payment_status === 'Paid';
+    });
+    if ((ord.status === 'Cancelled' || ord.status === 'Merged') && ord.payment_status === 'Paid') {
+      errors.push(ord.status + ' order ' + ord.order_id + ' cannot have payment_status Paid');
+    }
+    if (ordPayments.length > 1) {
+      errors.push('Order ' + ord.order_id + ' has multiple Paid payment records (' + ordPayments.length + ')');
+    }
+    if (ord.payment_status === 'Paid') {
+      if (ordPayments.length === 0) {
+        errors.push('Paid order ' + ord.order_id + ' has no matching Paid payment record');
+      } else if (ordPayments[0].amount_vnd !== ord.total_vnd) {
+        errors.push('Payment ' + ordPayments[0].payment_id + ' amount_vnd (' + ordPayments[0].amount_vnd + ') != order total_vnd (' + ord.total_vnd + ')');
+      }
+    } else if (ord.payment_status === 'Unpaid' && ordPayments.length > 0) {
+      errors.push('Unpaid order ' + ord.order_id + ' has unexpected Paid payment record ' + ordPayments[0].payment_id);
+    }
+  });
 
   return { ok: errors.length === 0, errors: errors };
 }

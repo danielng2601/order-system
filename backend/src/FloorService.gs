@@ -30,6 +30,11 @@ function formatPublicOrder_(order, items) {
     order_type: order.order_type,
     status: order.status,
     payment_status: order.payment_status,
+    payment_method: order.payment_method || '',
+    paid_at: order.paid_at || '',
+    cancelled_at: order.cancelled_at || '',
+    cancel_reason: order.cancel_reason || '',
+    cancelled_by: order.cancelled_by || '',
     table_numbers: order.table_numbers && order.table_numbers.length ? order.table_numbers : aggs.table_numbers,
     subtotal_vnd: order.subtotal_vnd,
     total_vnd: order.total_vnd,
@@ -63,7 +68,7 @@ function handleGetFloorState_(ss) {
   const syncRevision = getSyncRevision_(ss);
 
   const activeOrders = db.orders.filter(function (o) {
-    return isActiveOrderStatus_(o.status);
+    return isActiveOrderStatus_(o.status) && o.payment_status !== 'Paid';
   });
 
   const seatOccupancy = {};
@@ -172,7 +177,7 @@ function handleListActiveOrders_(ss, filters) {
   const syncRevision = getSyncRevision_(ss);
 
   let orders = db.orders.filter(function (o) {
-    return isActiveOrderStatus_(o.status);
+    return isActiveOrderStatus_(o.status) && o.payment_status !== 'Paid';
   });
 
   if (f.order_type && ROMS_CONFIG.ORDER_TYPES.indexOf(f.order_type) !== -1) {
@@ -229,6 +234,28 @@ function handleGetOrderDetail_(ss, payload) {
   const items = db.itemsByOrderId[orderId] || [];
   const subs = buildSeatAndTableSubtotals_(order.order_type, items);
 
+  const payData = loadAllPayments_(ss);
+  const ordPayments = payData.paymentsByOrderId[orderId] || [];
+  const payment = ordPayments.find(function (p) { return p.payment_status === 'Paid'; }) || ordPayments[0] || null;
+
+  const auditSheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.AUDIT_LOG);
+  const auditRows = sheetToObjects_(auditSheet);
+  const auditHistory = auditRows
+    .filter(function (a) {
+      if (String(a.entity_id) === orderId) return true;
+      const details = safeParseJson_(a.details_json, {});
+      return details && (details.order_id === orderId || details.source_order_id === orderId || details.destination_order_id === orderId);
+    })
+    .map(function (a) {
+      return {
+        log_id: String(a.log_id || ''),
+        timestamp: String(a.timestamp || ''),
+        action: String(a.action || ''),
+        actor: String(a.actor || ''),
+        details: safeParseJson_(a.details_json, {}),
+      };
+    });
+
   return {
     data: {
       syncRevision: getSyncRevision_(ss),
@@ -255,6 +282,18 @@ function handleGetOrderDetail_(ss, payload) {
       }),
       seatSubtotals: subs.seatSubtotals,
       tableSubtotals: subs.tableSubtotals,
+      payment: payment
+        ? {
+            payment_id: payment.payment_id,
+            amount_vnd: payment.amount_vnd,
+            payment_method: payment.payment_method,
+            payment_status: payment.payment_status,
+            reference_note: payment.reference_note,
+            created_at: payment.created_at,
+            created_by: payment.created_by,
+          }
+        : null,
+      auditHistory: auditHistory,
     },
   };
 }
