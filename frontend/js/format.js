@@ -44,7 +44,11 @@
 
   function escapeCsvCell(value) {
     if (value === null || value === undefined) return '';
-    const str = String(value);
+    let str = String(value);
+    // Neutralize spreadsheet formula injection (=, +, -, @, tab, CR)
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = "'" + str;
+    }
     if (/[",\r\n]/.test(str)) {
       return '"' + str.replace(/"/g, '""') + '"';
     }

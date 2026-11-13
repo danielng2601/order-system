@@ -1251,8 +1251,19 @@
   }
 
   /* ================= PHASE 3A & 3B: PAYMENT & CANCELLATION MODALS ================= */
+  function handleSessionErrorIfAny(err) {
+    if (err && (err.code === 'SESSION_EXPIRED' || err.code === 'UNAUTHORIZED')) {
+      setConnectionBadge('Hết phiên', 'error');
+      el('settings-panel').hidden = false;
+    }
+  }
+
   function setPaymentMethod(method) {
-    state.selectedPayMethod = method === 'BANK' ? 'BANK' : 'CASH';
+    const next = method === 'BANK' ? 'BANK' : 'CASH';
+    if (next !== state.selectedPayMethod) {
+      state.pendingPayKey = null;
+    }
+    state.selectedPayMethod = next;
     el('pay-method-cash').classList.toggle('active', state.selectedPayMethod === 'CASH');
     el('pay-method-bank').classList.toggle('active', state.selectedPayMethod === 'BANK');
   }
@@ -1262,6 +1273,7 @@
     if (!d) return;
     const o = d.order;
     if (o.payment_status === 'Paid' || (o.status !== 'Draft' && o.status !== 'Confirmed')) return;
+    state.pendingPayKey = fmt.generateUuid();
     setPaymentMethod('CASH');
     el('payment-order-summary').innerHTML =
       '<div><strong>Đơn hàng:</strong> ' +
@@ -1283,20 +1295,27 @@
     const o = state.currentDetail.order;
     const btn = el('payment-confirm-btn');
     const errEl = el('payment-error');
+    if (btn.disabled) return;
     btn.disabled = true;
     btn.textContent = 'Đang xử lý...';
     errEl.hidden = true;
+    if (!state.pendingPayKey) {
+      state.pendingPayKey = fmt.generateUuid();
+    }
     try {
       const res = await api.settlePayment({
-        idempotency_key: fmt.generateUuid(),
+        idempotency_key: state.pendingPayKey,
         order_id: o.order_id,
         expected_version: o.version,
         payment_method: state.selectedPayMethod,
         reference_note: el('payment-ref-input').value,
       });
       if (!res || !res.ok) {
-        throw new Error((res && res.error && res.error.message) || 'Thanh toán thất bại.');
+        const apiErr = new Error((res && res.error && res.error.message) || 'Thanh toán thất bại.');
+        apiErr.code = res && res.error && res.error.code;
+        throw apiErr;
       }
+      state.pendingPayKey = null;
       if (syncManager && res.data && res.data.syncRevision) {
         syncManager.setRevision(res.data.syncRevision);
       }
@@ -1306,6 +1325,7 @@
       if (state.activeTab === 'orders') loadActiveOrders();
       if (state.activeTab === 'history') loadHistoryAndReports();
     } catch (err) {
+      handleSessionErrorIfAny(err);
       errEl.textContent = err.message || 'Lỗi thanh toán.';
       errEl.hidden = false;
       btn.disabled = false;
@@ -1318,6 +1338,7 @@
     if (!d) return;
     const o = d.order;
     if (o.payment_status === 'Paid' || (o.status !== 'Draft' && o.status !== 'Confirmed')) return;
+    state.pendingCancelKey = fmt.generateUuid();
     el('cancel-order-summary').innerHTML =
       '<div><strong>Đơn hàng:</strong> ' +
       fmt.escapeHtml(o.order_number || o.order_id) +
@@ -1337,6 +1358,7 @@
     const reason = el('cancel-reason-input').value.trim();
     const errEl = el('cancel-error');
     const btn = el('cancel-confirm-btn');
+    if (btn.disabled) return;
     if (reason.length < 2) {
       errEl.textContent = 'Vui lòng nhập lý do hủy đơn (tối thiểu 2 ký tự).';
       errEl.hidden = false;
@@ -1345,16 +1367,22 @@
     btn.disabled = true;
     btn.textContent = 'Đang hủy...';
     errEl.hidden = true;
+    if (!state.pendingCancelKey) {
+      state.pendingCancelKey = fmt.generateUuid();
+    }
     try {
       const res = await api.cancelOrder({
-        idempotency_key: fmt.generateUuid(),
+        idempotency_key: state.pendingCancelKey,
         order_id: o.order_id,
         expected_version: o.version,
         cancel_reason: reason,
       });
       if (!res || !res.ok) {
-        throw new Error((res && res.error && res.error.message) || 'Hủy đơn thất bại.');
+        const apiErr = new Error((res && res.error && res.error.message) || 'Hủy đơn thất bại.');
+        apiErr.code = res && res.error && res.error.code;
+        throw apiErr;
       }
+      state.pendingCancelKey = null;
       if (syncManager && res.data && res.data.syncRevision) {
         syncManager.setRevision(res.data.syncRevision);
       }
@@ -1364,6 +1392,7 @@
       if (state.activeTab === 'orders') loadActiveOrders();
       if (state.activeTab === 'history') loadHistoryAndReports();
     } catch (err) {
+      handleSessionErrorIfAny(err);
       errEl.textContent = err.message || 'Lỗi hủy đơn.';
       errEl.hidden = false;
       btn.disabled = false;
@@ -1400,6 +1429,7 @@
         }
       }
     } catch (err) {
+      handleSessionErrorIfAny(err);
       el('history-orders-list').innerHTML =
         '<p class="inline-error">' + fmt.escapeHtml(err.message || 'Lỗi tải lịch sử & báo cáo.') + '</p>';
     }
@@ -1560,12 +1590,24 @@
 
   async function exportOrdersCsv() {
     try {
-      const res = await api.listOrderHistory({
-        filters: Object.assign({}, state.historyFilters),
-        page: 1,
-        page_size: 100,
-      });
-      if (!res || !res.ok) return;
+      const allOrders = [];
+      let page = 1;
+      let totalPages = 1;
+      let dateFrom = 'all';
+      let dateTo = 'all';
+      while (page <= totalPages && page <= 10) {
+        const res = await api.listOrderHistory({
+          filters: Object.assign({}, state.historyFilters),
+          page: page,
+          page_size: 100,
+        });
+        if (!res || !res.ok) return;
+        allOrders.push.apply(allOrders, res.data.orders || []);
+        totalPages = Number(res.data.totalPages || 1);
+        dateFrom = res.data.dateFrom || 'all';
+        dateTo = res.data.dateTo || 'all';
+        page += 1;
+      }
       const headers = [
         'Mã đơn',
         'ID',
@@ -1579,7 +1621,7 @@
         'Lý do hủy',
         'Ghi chú',
       ];
-      const rows = res.data.orders.map(function (o) {
+      const rows = allOrders.map(function (o) {
         return [
           o.order_number,
           o.order_id,
@@ -1594,9 +1636,10 @@
           o.notes || '',
         ];
       });
-      const stamp = (res.data.dateFrom || 'all') + '_' + (res.data.dateTo || 'all');
+      const stamp = dateFrom + '_' + dateTo;
       downloadCsv('roms-orders-' + stamp + '.csv', fmt.buildCsv(headers, rows));
     } catch (err) {
+      handleSessionErrorIfAny(err);
       global.alert(err.message || 'Lỗi xuất CSV đơn hàng.');
     }
   }
