@@ -436,3 +436,145 @@ test('Phase 4A.2 Audit: frontend-backend environment handshake blocks mismatches
   gCustom.ROMS_API.setSession('injected_tok', Date.now() + 60000);
   await assert.rejects(() => gCustom.ROMS_API.createOrder({}), (err) => err.code === 'ENV_MISMATCH');
 });
+
+test('Performance optimization: syncStatus uses CacheService fast path without opening SpreadsheetApp', () => {
+  const { createGasMockEnv } = require('./mock_sheets');
+  const ctx = createGasMockEnv();
+  vm.createContext(ctx);
+  const gasFiles = [
+    'backend/src/Config.gs',
+    'backend/src/Validation.gs',
+    'backend/src/DbSetup.gs',
+    'backend/src/PrinterService.gs',
+    'backend/src/Repository.gs',
+    'backend/src/OrderService.gs',
+    'backend/src/FloorService.gs',
+    'backend/src/PaymentAndLifecycleService.gs',
+    'backend/src/Code.gs',
+  ];
+  for (const relPath of gasFiles) {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, relPath), 'utf8'), ctx, { filename: relPath });
+  }
+  ctx.setupDatabase();
+
+  let openByIdCalls = 0;
+  const origOpenById = ctx.SpreadsheetApp.openById;
+  ctx.SpreadsheetApp.openById = function (id) {
+    openByIdCalls += 1;
+    return origOpenById(id);
+  };
+
+  // Login with include_bootstrap: true returns both session_token and bootstrap in one call
+  const loginRes = JSON.parse(
+    ctx
+      .doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'login',
+            passcode: 'test-pass-999',
+            include_bootstrap: true,
+          }),
+        },
+      })
+      .getContent()
+  );
+  assert.equal(loginRes.ok, true);
+  assert.ok(loginRes.data.session_token);
+  assert.ok(loginRes.data.bootstrap);
+  assert.ok(Array.isArray(loginRes.data.bootstrap.menuItems));
+  assert.equal(loginRes.data.bootstrap.syncRevision, 1);
+  assert.equal(openByIdCalls, 1);
+
+  // syncStatus should hit CacheService (populated by bootstrap's getSyncRevision_) with 0 SpreadsheetApp.openById calls
+  openByIdCalls = 0;
+  const syncRes = JSON.parse(
+    ctx
+      .doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'syncStatus',
+            session_token: loginRes.data.session_token,
+          }),
+        },
+      })
+      .getContent()
+  );
+  assert.equal(syncRes.ok, true);
+  assert.equal(syncRes.data.syncRevision, 1);
+  assert.equal(openByIdCalls, 0);
+
+  // Creating an order increments SyncRevision in both Sheets and CacheService
+  const createRes = JSON.parse(
+    ctx
+      .doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'createOrder',
+            session_token: loginRes.data.session_token,
+            idempotency_key: 'perf-test-order-1',
+            order_type: 'TAKEAWAY',
+            items: [{ item_id: 'MY_VAN_THAN', quantity: 1 }],
+          }),
+        },
+      })
+      .getContent()
+  );
+  assert.equal(createRes.ok, true);
+
+  openByIdCalls = 0;
+  const syncResAfter = JSON.parse(
+    ctx
+      .doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'syncStatus',
+            session_token: loginRes.data.session_token,
+          }),
+        },
+      })
+      .getContent()
+  );
+  assert.equal(syncResAfter.ok, true);
+  assert.equal(syncResAfter.data.syncRevision, 2);
+  assert.equal(openByIdCalls, 0);
+});
+
+test('Performance optimization: ROMS_API.login passes include_bootstrap when requested', async () => {
+  const cfg = {
+    ENV: 'STAGING',
+    ENVIRONMENTS: {
+      LOCAL: { label: 'LOCAL', GAS_WEB_APP_URL: 'http://localhost:8080/exec' },
+      STAGING: { label: 'STAGING', GAS_WEB_APP_URL: 'https://script.google.com/macros/s/STAGING_ID/exec' },
+      PRODUCTION: { label: 'PRODUCTION', GAS_WEB_APP_URL: 'https://script.google.com/macros/s/PROD_ID/exec' },
+    },
+  };
+  let capturedLoginBody = null;
+  const g = loadFrontendEnvAndApi({
+    search: '?env=staging',
+    romsConfig: cfg,
+    fetchImpl: async (url, opts) => {
+      if (!opts || opts.method === 'GET') {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, data: { environment: 'STAGING' } }) };
+      }
+      capturedLoginBody = JSON.parse(opts.body);
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            ok: true,
+            data: {
+              session_token: 'tok-123',
+              expires_at_ms: Date.now() + 60000,
+              bootstrap: { menuItems: [], modifiers: [], tablesSeats: [], syncRevision: 3 },
+            },
+          }),
+      };
+    },
+  });
+
+  const res = await g.ROMS_API.login('pass123', { includeBootstrap: true });
+  assert.equal(res.ok, true);
+  assert.equal(capturedLoginBody.include_bootstrap, true);
+  assert.equal(res.data.bootstrap.syncRevision, 3);
+});

@@ -36,12 +36,20 @@ function mapRecordToHeaders_(headers, record) {
   });
 }
 
+function getScriptCacheSafe_() {
+  if (typeof CacheService !== 'undefined' && CacheService.getScriptCache) {
+    return CacheService.getScriptCache();
+  }
+  return null;
+}
+
 /**
  * Loads settings, menu items, modifiers, and seats from Google Sheets.
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @return {Object}
  */
 function loadCatalog_(ss) {
+
   const settingsRows = sheetToObjects_(ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS));
   const settingsMap = {};
   settingsRows.forEach(function (row) {
@@ -325,26 +333,52 @@ function safeParseJson_(raw, fallback) {
   }
 }
 
+function getCachedSyncRevision_() {
+  const cache = getScriptCacheSafe_();
+  if (!cache) return null;
+  const raw = cache.get('SYNC_REVISION');
+  if (!raw) return null;
+  const rev = Number(raw);
+  return Number.isInteger(rev) && rev >= 1 ? rev : null;
+}
+
+function setCachedSyncRevision_(rev) {
+  const cache = getScriptCacheSafe_();
+  if (cache && Number.isInteger(rev) && rev >= 1) {
+    try {
+      cache.put('SYNC_REVISION', String(rev), 21600);
+    } catch (e) {
+      // Ignore cache write errors
+    }
+  }
+}
+
 /**
- * Reads the current SyncRevision integer from Settings.
+ * Reads the current SyncRevision integer from Settings (and populates cache).
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @return {number}
  */
 function getSyncRevision_(ss) {
+  const cached = getCachedSyncRevision_();
+  if (cached !== null) {
+    return cached;
+  }
   const sheet = ss.getSheetByName(ROMS_CONFIG.SHEETS.SETTINGS);
   if (!sheet || sheet.getLastRow() < 2) return 1;
   const values = sheet.getDataRange().getValues();
   for (let r = 1; r < values.length; r += 1) {
     if (String(values[r][0]) === 'SyncRevision') {
       const rev = Number(values[r][1]);
-      return Number.isInteger(rev) && rev >= 1 ? rev : 1;
+      const validRev = Number.isInteger(rev) && rev >= 1 ? rev : 1;
+      setCachedSyncRevision_(validRev);
+      return validRev;
     }
   }
   return 1;
 }
 
 /**
- * Atomically increments Settings.SyncRevision inside ScriptLock.
+ * Atomically increments Settings.SyncRevision inside ScriptLock and updates CacheService.
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @return {number}
  */
@@ -357,13 +391,13 @@ function incrementSyncRevision_(ss) {
       if (String(values[r][0]) === 'SyncRevision') {
         const nextRev = (Number(values[r][1]) || 1) + 1;
         sheet.getRange(r + 1, 2).setValue(String(nextRev));
-        SpreadsheetApp.flush();
+        setCachedSyncRevision_(nextRev);
         return nextRev;
       }
     }
   }
   sheet.appendRow(['SyncRevision', '2', 'Monotonic sync cursor incremented on order writes']);
-  SpreadsheetApp.flush();
+  setCachedSyncRevision_(2);
   return 2;
 }
 

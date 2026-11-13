@@ -1202,17 +1202,23 @@
     connectBtn.textContent = 'Đang kết nối...';
 
     try {
+      let res = null;
       if (passcodeForLogin !== undefined && passcodeForLogin !== '') {
-        const loginRes = await api.login(passcodeForLogin);
+        const loginRes = await api.login(passcodeForLogin, { includeBootstrap: true });
         if (!loginRes || !loginRes.ok) {
           throw new Error(
             (loginRes && loginRes.error && loginRes.error.message) || 'Đăng nhập thất bại.'
           );
         }
         el('staff-passcode-input').value = '';
+        if (loginRes.data && loginRes.data.bootstrap) {
+          res = { ok: true, data: loginRes.data.bootstrap };
+        }
       }
 
-      const res = await api.fetchBootstrap();
+      if (!res) {
+        res = await api.fetchBootstrap();
+      }
       if (!res || !res.ok) {
         const err = new Error((res && res.error && res.error.message) || 'Không thể tải thực đơn.');
         err.code = res && res.error && res.error.code;

@@ -104,7 +104,7 @@ function doPost(e) {
   }
 
   if (action === 'login') {
-    return handleLogin_(payload.passcode);
+    return handleLogin_(payload.passcode, payload.include_bootstrap === true);
   }
 
   const authCheck = isAuthorizedPost_(payload);
@@ -129,6 +129,20 @@ function doPost(e) {
       },
       error: null,
     });
+  }
+
+  if (action === 'syncStatus') {
+    const cachedRev = getCachedSyncRevision_();
+    if (cachedRev !== null) {
+      return jsonResponse_({
+        ok: true,
+        data: {
+          syncRevision: cachedRev,
+          serverTime: formatLocalTimestamp(),
+        },
+        error: null,
+      });
+    }
   }
 
   if (
@@ -248,10 +262,12 @@ function doPost(e) {
 
 /**
  * Exchanges a valid STAFF_PASSCODE for a short-lived session_token in CacheService.
+ * Optionally includes bootstrap payload to eliminate an extra roundtrip on sign-in.
  * @param {string=} providedPasscode
+ * @param {boolean=} includeBootstrap
  * @return {GoogleAppsScript.Content.TextOutput}
  */
-function handleLogin_(providedPasscode) {
+function handleLogin_(providedPasscode, includeBootstrap) {
   if (!isValidPasscode_(providedPasscode)) {
     return jsonResponse_({
       ok: false,
@@ -271,14 +287,29 @@ function handleLogin_(providedPasscode) {
   const cache = CacheService.getScriptCache();
   cache.put('SESSION_' + token, JSON.stringify(sessionRecord), ttl);
 
+  const responseData = {
+    session_token: token,
+    expires_at: formatLocalTimestamp(new Date(expiresAtMs)),
+    expires_at_ms: expiresAtMs,
+    ttl_seconds: ttl,
+  };
+
+  if (includeBootstrap === true) {
+    try {
+      const ss = getDatabaseSpreadsheet();
+      responseData.bootstrap = handleGetBootstrap_(ss);
+    } catch (err) {
+      return jsonResponse_({
+        ok: false,
+        data: null,
+        error: { code: 'INTERNAL_ERROR', message: err.message || 'Unexpected server error' },
+      });
+    }
+  }
+
   return jsonResponse_({
     ok: true,
-    data: {
-      session_token: token,
-      expires_at: formatLocalTimestamp(new Date(expiresAtMs)),
-      expires_at_ms: expiresAtMs,
-      ttl_seconds: ttl,
-    },
+    data: responseData,
     error: null,
   });
 }

@@ -365,9 +365,14 @@
     clearSession: clearSession,
     checkHealth: requestHealth,
     verifyEnvironmentHandshake: verifyEnvironmentHandshake,
-    login: async function (passcode) {
+    login: async function (passcode, options) {
       await verifyEnvironmentHandshake();
-      const res = await requestPost('login', { passcode: String(passcode || '') }, false);
+      const includeBootstrap = Boolean(options && options.includeBootstrap);
+      const res = await requestPost(
+        'login',
+        { passcode: String(passcode || ''), include_bootstrap: includeBootstrap },
+        false
+      );
       if (res.ok && res.data && res.data.session_token) {
         setSession(res.data.session_token, res.data.expires_at_ms);
       }
