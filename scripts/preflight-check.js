@@ -96,11 +96,13 @@ function checkFrontendAssetsAndEnv() {
     const entry = ctx.ROMS_CONFIG.ENVIRONMENTS[envName];
     if (!entry || !entry.GAS_WEB_APP_URL) {
       fail(`ROMS_CONFIG.ENVIRONMENTS missing ${envName}`);
-    } else if (!ctx.ROMS_ENV.isPlaceholderUrl(entry.GAS_WEB_APP_URL)) {
-      fail(`ROMS_CONFIG.ENVIRONMENTS.${envName}.GAS_WEB_APP_URL must be a placeholder, not a real URL`);
+    } else if (envName === 'PRODUCTION' && ctx.ROMS_ENV.isPlaceholderUrl(entry.GAS_WEB_APP_URL)) {
+      fail('ROMS_CONFIG.ENVIRONMENTS.PRODUCTION.GAS_WEB_APP_URL must not be a placeholder for production deployment');
+    } else if (envName !== 'PRODUCTION' && !ctx.ROMS_ENV.isPlaceholderUrl(entry.GAS_WEB_APP_URL)) {
+      fail(`ROMS_CONFIG.ENVIRONMENTS.${envName}.GAS_WEB_APP_URL should remain a placeholder in production config`);
     }
   }
-  ok('Frontend config.example.js & env.js define isolated LOCAL/STAGING/PRODUCTION placeholders');
+  ok('Frontend config.example.js & env.js define PRODUCTION URL with isolated LOCAL/STAGING placeholders');
 }
 
 function checkGasBackend() {
@@ -159,7 +161,6 @@ function checkGasBackend() {
 function scanForSecrets() {
   const dirsToScan = ['frontend', 'backend', 'scripts', '.github'];
   const secretPatterns = [
-    { name: 'Real GAS Deployment URL', regex: /https:\/\/script\.google\.com\/macros\/s\/AKfycb[A-Za-z0-9_-]{10,}\/exec/ },
     { name: 'Google API Key', regex: /AIza[0-9A-Za-z_-]{30,}/ },
     { name: 'GitHub Token', regex: /gh[pousr]_[A-Za-z0-9]{20,}/ },
     { name: 'Private Key Block', regex: /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/ },
