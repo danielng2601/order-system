@@ -1,8 +1,10 @@
 # Deployment Guide — ROMS V1.0
 
+> **Staging First:** Before deploying to Production, follow [STAGING_DEPLOYMENT_PLAN.md](STAGING_DEPLOYMENT_PLAN.md), [ENVIRONMENT_CONFIGURATION.md](ENVIRONMENT_CONFIGURATION.md), and [GAS_DEPLOYMENT_GUIDE.md](GAS_DEPLOYMENT_GUIDE.md) using an isolated staging Google Sheet and GAS project.
+
 ## 1. Google Sheets Database Setup
 
-1. Create a new Google Sheet (e.g., `ROMS_Database_Prod`) in the restaurant owner's Google Drive.
+1. Create a new Google Sheet (e.g., `ROMS_Database_Staging` or `ROMS_Database_Prod`) in the restaurant owner's Google Drive.
 2. Copy the Spreadsheet ID from the URL:
    `https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`
 3. Keep the Google Sheet private (do not share publicly).
@@ -12,6 +14,7 @@
 1. Create a standalone Apps Script project at [script.google.com](https://script.google.com) (or via `clasp create --type standalone`).
 2. Copy all files from `backend/src/` (`appsscript.json`, `Config.gs`, `Validation.gs`, `DbSetup.gs`, `PrinterService.gs`, `Repository.gs`, `OrderService.gs`, `FloorService.gs`, `PaymentAndLifecycleService.gs`, `HistoryAndReportService.gs`, `Code.gs`) into the Apps Script project (or copy `backend/.clasp.json.example` to `backend/.clasp.json`, fill in `scriptId`, and run `clasp push`).
 3. In Apps Script **Project Settings → Script Properties**, add:
+   - `ROMS_ENV`: `STAGING` or `PRODUCTION`
    - `SPREADSHEET_ID`: `<your Google Sheet ID>`
    - `STAFF_PASSCODE`: `<strong passcode for restaurant staff>`
 4. In the Apps Script editor, select `setupDatabase` and click **Run** (grant Sheets & Drive permissions when prompted). Verify all 9 sheets are created and seeded.

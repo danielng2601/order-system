@@ -58,17 +58,26 @@ order-system/
 - **Phase 2 & 2.5 (Completed):** 3×3 Floor Plan (9 tables × 4 seats), seat-based item assignment, add items, move item, merge/split orders, active order filters, multi-device polling sync, and integration audit.
 - **Phase 3 (Completed):** Payment settlement (`CASH`/`BANK`), item editing/removal, order cancellation, paginated order history, daily/range reports, UTF-8 BOM CSV exports, and `Payments` integrity checks.
 - **Phase 3.5 (Completed):** Production-readiness audit, `Paid` `moveOrderItem` guard, CSV formula injection protection, payment timeout idempotent retry, v1.2.0 → v1.3.0 migration verification (48/48 tests passing).
+- **Phase 4A (Completed — Preparation Only):** Staging environment separation (`LOCAL`/`STAGING`/`PRODUCTION`), preflight validation (`npm run preflight`), GAS health environment reporting, and staging/backup/rollback runbooks (53/53 tests passing; no live deployment performed).
 
-## Running Automated Tests
+## Running Automated Tests & Preflight
 
 Requires Node.js >= 20:
 
 ```bash
 npm test
+npm run preflight
 ```
 
 ## Documentation
 
+- [STAGING_DEPLOYMENT_PLAN.md](STAGING_DEPLOYMENT_PLAN.md) — Controlled staging deployment topology & sequence.
+- [ENVIRONMENT_CONFIGURATION.md](ENVIRONMENT_CONFIGURATION.md) — `LOCAL` / `STAGING` / `PRODUCTION` separation & fail-closed rules.
+- [GAS_DEPLOYMENT_GUIDE.md](GAS_DEPLOYMENT_GUIDE.md) — Standalone GAS staging deployment & Script Properties.
+- [STAGING_DATABASE_SETUP.md](STAGING_DATABASE_SETUP.md) — Isolated staging Google Sheet setup & verification.
+- [BACKUP_AND_ROLLBACK.md](BACKUP_AND_ROLLBACK.md) — Drive backup & rollback procedures.
+- [STAGING_TEST_PLAN.md](STAGING_TEST_PLAN.md) — Live staging verification gate.
+- [DEPLOYMENT_PREFLIGHT_REPORT.md](DEPLOYMENT_PREFLIGHT_REPORT.md) — Phase 4A preflight verification report.
 - [PHASE3_5_AUDIT.md](PHASE3_5_AUDIT.md) — Phase 3.5 production-readiness audit & fixes.
 - [PAYMENT_AND_ACCOUNTING_INVARIANTS.md](PAYMENT_AND_ACCOUNTING_INVARIANTS.md) — Canonical accounting & payment invariants.
 - [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) — Controlled deployment sequence & known limitations.
