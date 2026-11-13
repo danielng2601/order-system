@@ -2264,6 +2264,19 @@
   }
 
   function init() {
+    const envState = global.ROMS_ENV ? global.ROMS_ENV.resolveConfig(global) : null;
+    const envBadge = el('env-badge');
+    if (envBadge && envState) {
+      envBadge.textContent = envState.env;
+      envBadge.className =
+        'status-badge ' + (envState.env === 'PRODUCTION' ? 'status-warn' : 'status-neutral');
+      envBadge.hidden = false;
+      if (!envState.valid && el('settings-error')) {
+        el('settings-error').textContent = envState.errorMessage;
+        el('settings-error').hidden = false;
+      }
+    }
+
     el('gas-url-input').value = api.getApiUrl();
     syncManager = global.ROMS_SYNC.createSyncManager({
       apiClient: api,
@@ -2290,7 +2303,11 @@
     renderCart();
     bindEvents();
 
-    if (api.getSessionToken() && api.getApiUrl().indexOf('REPLACE_WITH_DEPLOYMENT_ID') === -1) {
+    const currentUrl = api.getApiUrl();
+    const isPlaceholder = global.ROMS_ENV
+      ? global.ROMS_ENV.isPlaceholderUrl(currentUrl)
+      : !currentUrl || currentUrl.indexOf('REPLACE_WITH_') !== -1;
+    if (api.getSessionToken() && !isPlaceholder && (!envState || envState.valid)) {
       loadBootstrapFromBackend();
     }
   }

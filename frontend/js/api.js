@@ -30,10 +30,33 @@
     return g.sessionStorage || null;
   }
 
+  function resolveEnvState() {
+    const g = getGlobal();
+    if (g.ROMS_ENV && typeof g.ROMS_ENV.resolveConfig === 'function') {
+      return g.ROMS_ENV.resolveConfig(g);
+    }
+    return null;
+  }
+
+  function getStorageKey(baseKey) {
+    const envState = resolveEnvState();
+    if (envState && envState.storagePrefix) {
+      return envState.storagePrefix + baseKey.replace(/^roms_/, '');
+    }
+    return baseKey;
+  }
+
   function getApiUrl() {
+    const envState = resolveEnvState();
+    if (envState && !envState.valid) {
+      return '';
+    }
     const storage = getStorage();
-    const stored = storage ? storage.getItem(STORAGE_KEYS.API_URL) : '';
+    const stored = storage ? storage.getItem(getStorageKey(STORAGE_KEYS.API_URL)) : '';
     if (stored) return stored;
+    if (envState) {
+      return envState.gasWebAppUrl || '';
+    }
     const g = getGlobal();
     return (g.ROMS_CONFIG && g.ROMS_CONFIG.GAS_WEB_APP_URL) || '';
   }
@@ -41,15 +64,15 @@
   function setApiUrl(url) {
     const storage = getStorage();
     if (storage) {
-      storage.setItem(STORAGE_KEYS.API_URL, String(url || '').trim());
+      storage.setItem(getStorageKey(STORAGE_KEYS.API_URL), String(url || '').trim());
     }
   }
 
   function getSessionToken() {
     const storage = getStorage();
     if (!storage) return '';
-    const token = storage.getItem(STORAGE_KEYS.SESSION_TOKEN) || '';
-    const expiresAtMs = Number(storage.getItem(STORAGE_KEYS.EXPIRES_AT_MS) || 0);
+    const token = storage.getItem(getStorageKey(STORAGE_KEYS.SESSION_TOKEN)) || '';
+    const expiresAtMs = Number(storage.getItem(getStorageKey(STORAGE_KEYS.EXPIRES_AT_MS)) || 0);
     if (!token) return '';
     if (expiresAtMs && Date.now() > expiresAtMs) {
       clearSession();
@@ -61,16 +84,16 @@
   function setSession(token, expiresAtMs) {
     const storage = getStorage();
     if (storage) {
-      storage.setItem(STORAGE_KEYS.SESSION_TOKEN, String(token || ''));
-      storage.setItem(STORAGE_KEYS.EXPIRES_AT_MS, String(expiresAtMs || 0));
+      storage.setItem(getStorageKey(STORAGE_KEYS.SESSION_TOKEN), String(token || ''));
+      storage.setItem(getStorageKey(STORAGE_KEYS.EXPIRES_AT_MS), String(expiresAtMs || 0));
     }
   }
 
   function clearSession() {
     const storage = getStorage();
     if (storage) {
-      storage.removeItem(STORAGE_KEYS.SESSION_TOKEN);
-      storage.removeItem(STORAGE_KEYS.EXPIRES_AT_MS);
+      storage.removeItem(getStorageKey(STORAGE_KEYS.SESSION_TOKEN));
+      storage.removeItem(getStorageKey(STORAGE_KEYS.EXPIRES_AT_MS));
     }
   }
 
@@ -81,9 +104,24 @@
   }
 
   function assertConfiguredUrl() {
+    const g = getGlobal();
+    const envState = resolveEnvState();
+    if (envState && !envState.valid) {
+      throw makeApiError(envState.errorMessage, envState.errorCode || 'INVALID_ENV');
+    }
     const baseUrl = getApiUrl();
-    if (!baseUrl || baseUrl.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
-      throw makeApiError('Chưa cấu hình URL của Google Apps Script Web App.', 'UNCONFIGURED');
+    const isPlaceholder =
+      g.ROMS_ENV && typeof g.ROMS_ENV.isPlaceholderUrl === 'function'
+        ? g.ROMS_ENV.isPlaceholderUrl(baseUrl)
+        : !baseUrl || baseUrl.indexOf('REPLACE_WITH_') !== -1 || baseUrl.indexOf('YOUR_') !== -1;
+    if (isPlaceholder) {
+      const envLabel = envState ? ' (' + envState.env + ')' : '';
+      throw makeApiError('Chưa cấu hình URL của Google Apps Script Web App' + envLabel + '.', 'UNCONFIGURED');
+    }
+    if (envState && g.ROMS_ENV && typeof g.ROMS_ENV.isValidUrlForEnv === 'function') {
+      if (!g.ROMS_ENV.isValidUrlForEnv(baseUrl, envState.env)) {
+        throw makeApiError('URL của Google Apps Script Web App không hợp lệ cho môi trường ' + envState.env + '.', 'UNCONFIGURED');
+      }
     }
     return baseUrl;
   }
