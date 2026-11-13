@@ -16,6 +16,7 @@
     let toppingUnitPriceVnd = Number(opts.toppingUnitPriceVnd || 15000);
     let orderType = opts.orderType === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN';
     let orderNotes = '';
+    let targetOrder = null; // { order_id, order_number, expected_version, order_type }
     let items = [];
     let nextLineSeq = 1;
     let isSubmitting = false;
@@ -44,7 +45,23 @@
       }
     }
 
+    function setTargetOrder(orderInfo) {
+      if (!orderInfo) {
+        targetOrder = null;
+      } else {
+        targetOrder = {
+          order_id: String(orderInfo.order_id),
+          order_number: String(orderInfo.order_number || orderInfo.order_id),
+          expected_version: Number(orderInfo.version || orderInfo.expected_version),
+          order_type: orderInfo.order_type === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN',
+        };
+        orderType = targetOrder.order_type;
+      }
+      pendingIdempotencyKey = null;
+    }
+
     function setOrderType(type) {
+      if (targetOrder) return; // locked to targetOrder's type while adding items
       if (type === 'DINE_IN' || type === 'TAKEAWAY') {
         orderType = type;
         pendingIdempotencyKey = null;
@@ -137,6 +154,7 @@
     function clearCart() {
       items = [];
       orderNotes = '';
+      targetOrder = null;
       pendingIdempotencyKey = null;
     }
 
@@ -144,6 +162,7 @@
       return {
         orderType: orderType,
         orderNotes: orderNotes,
+        targetOrder: targetOrder ? Object.assign({}, targetOrder) : null,
         toppingUnitPriceVnd: toppingUnitPriceVnd,
         items: items.map(function (it) {
           return Object.assign({}, it);
@@ -188,20 +207,29 @@
       if (!pendingIdempotencyKey) {
         pendingIdempotencyKey = format.generateUuid();
       }
+      const mappedItems = items.map(function (it) {
+        return {
+          item_id: it.item_id,
+          quantity: it.quantity,
+          seat_id: orderType === 'DINE_IN' ? it.seat_id : '',
+          modifier_ids: it.modifier_ids.slice(),
+          topping_units: it.topping_units,
+          custom_note: it.custom_note,
+        };
+      });
+      if (targetOrder) {
+        return {
+          idempotency_key: pendingIdempotencyKey,
+          order_id: targetOrder.order_id,
+          expected_version: targetOrder.expected_version,
+          items: mappedItems,
+        };
+      }
       return {
         idempotency_key: pendingIdempotencyKey,
         order_type: orderType,
         notes: orderNotes,
-        items: items.map(function (it) {
-          return {
-            item_id: it.item_id,
-            quantity: it.quantity,
-            seat_id: orderType === 'DINE_IN' ? it.seat_id : '',
-            modifier_ids: it.modifier_ids.slice(),
-            topping_units: it.topping_units,
-            custom_note: it.custom_note,
-          };
-        }),
+        items: mappedItems,
       };
     }
 
@@ -224,13 +252,18 @@
       isSubmitting = true;
       try {
         const payload = buildOrderPayload();
-        const res = await apiClient.createOrder(payload);
+        const res = targetOrder
+          ? await apiClient.addItemsToOrder(payload)
+          : await apiClient.createOrder(payload);
         if (res && res.ok) {
           clearCart();
           return res;
         }
         const msg = (res && res.error && res.error.message) || 'Không thể tạo đơn hàng.';
-        throw new Error(msg);
+        const err = new Error(msg);
+        err.code = res && res.error && res.error.code;
+        err.latestOrder = res && res.error && res.error.latestOrder;
+        throw err;
       } finally {
         isSubmitting = false;
       }
@@ -238,6 +271,7 @@
 
     return {
       setToppingUnitPriceVnd: setToppingUnitPriceVnd,
+      setTargetOrder: setTargetOrder,
       setOrderType: setOrderType,
       setOrderNotes: setOrderNotes,
       addItem: addItem,

@@ -683,3 +683,251 @@ body {
   font-weight: 700;
   margin: 4px 0 14px;
 }
+
+/* Phase 2 Navigation, Floor Plan, Active Orders & Modals */
+.main-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.nav-tab {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nav-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.add-mode-banner {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-container {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.section-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.legend-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-avail { background: #16a34a; }
+.dot-occ { background: #dc2626; }
+.dot-unavail { background: #9ca3af; }
+
+.floor-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 640px) {
+  .floor-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 980px) {
+  .floor-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.table-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.table-card.has-occupied {
+  border-color: #fca5a5;
+}
+
+.table-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.table-card-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.table-total {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.seats-grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.seat-btn {
+  min-height: 52px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.seat-btn.seat-available {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.seat-btn.seat-occupied {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.seat-btn.seat-unavailable {
+  background: var(--bg);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.seat-btn-id {
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.seat-btn-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.filters-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.orders-list {
+  display: grid;
+  gap: 10px;
+}
+
+.order-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.order-card-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.order-check {
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+}
+
+.modal-wide {
+  max-width: 720px;
+}
+
+.group-box {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.group-box-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.detail-item-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.detail-item-row:last-child {
+  border-bottom: none;
+}

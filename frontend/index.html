@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ROMS V1.0 — Đặt món</title>
+  <title>ROMS V1.0 — Quản lý đặt món &amp; Bàn</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -11,12 +11,21 @@
     <div class="header-brand">
       <h1>ROMS V1.0</h1>
       <span id="conn-badge" class="status-badge status-neutral">Chưa kết nối</span>
+      <span id="sync-status-label" class="muted-small" hidden></span>
     </div>
     <div class="header-actions">
+      <button id="sync-now-btn" type="button" class="btn btn-sm" hidden>Đồng bộ</button>
       <button id="refresh-menu-btn" type="button" class="btn btn-sm" hidden>Tải lại thực đơn</button>
       <button id="toggle-settings-btn" type="button" class="btn btn-sm">Cài đặt</button>
     </div>
   </header>
+
+  <nav class="main-nav" aria-label="Điều hướng chính">
+    <button type="button" class="nav-tab active" data-tab="order">Đặt món</button>
+    <button type="button" class="nav-tab" data-tab="floor">Sơ đồ bàn</button>
+    <button type="button" class="nav-tab" data-tab="orders">Đơn đang mở</button>
+    <button type="button" class="nav-tab" data-tab="history">Lịch sử</button>
+  </nav>
 
   <section id="settings-panel" class="settings-panel">
     <div class="settings-inner">
@@ -35,91 +44,150 @@
     <p id="settings-error" class="inline-error" hidden></p>
   </section>
 
-  <section class="order-context-bar">
-    <div class="order-type-group" role="group" aria-label="Loại đơn hàng">
-      <button id="type-dinein-btn" type="button" class="seg-btn active" data-type="DINE_IN">Tại bàn</button>
-      <button id="type-takeaway-btn" type="button" class="seg-btn" data-type="TAKEAWAY">Mang về</button>
+  <!-- TAB 1: ĐẶT MÓN -->
+  <section id="tab-order" class="tab-view">
+    <div id="add-mode-banner" class="add-mode-banner" hidden>
+      <span>Đang thêm món vào đơn <strong id="add-mode-order-label"></strong></span>
+      <button id="cancel-add-mode-btn" type="button" class="btn btn-sm">Hủy thêm món</button>
     </div>
 
-    <div id="seat-picker-bar" class="seat-picker-bar">
-      <label for="active-table-select">Bàn:</label>
-      <select id="active-table-select" class="select-touch" aria-label="Chọn bàn"></select>
-      <label for="active-seat-select">Ghế:</label>
-      <select id="active-seat-select" class="select-touch" aria-label="Chọn ghế"></select>
-      <span id="active-seat-badge" class="seat-pill">T1-S1</span>
-    </div>
+    <section class="order-context-bar">
+      <div class="order-type-group" role="group" aria-label="Loại đơn hàng">
+        <button id="type-dinein-btn" type="button" class="seg-btn active" data-type="DINE_IN">Tại bàn</button>
+        <button id="type-takeaway-btn" type="button" class="seg-btn" data-type="TAKEAWAY">Mang về</button>
+      </div>
 
-    <div id="takeaway-hint" class="takeaway-hint" hidden>
-      Đơn mang về — không cần chọn bàn/ghế
+      <div id="seat-picker-bar" class="seat-picker-bar">
+        <label for="active-table-select">Bàn:</label>
+        <select id="active-table-select" class="select-touch" aria-label="Chọn bàn"></select>
+        <label for="active-seat-select">Ghế:</label>
+        <select id="active-seat-select" class="select-touch" aria-label="Chọn ghế"></select>
+        <span id="active-seat-badge" class="seat-pill">T1-S1</span>
+      </div>
+
+      <div id="takeaway-hint" class="takeaway-hint" hidden>
+        Đơn mang về — không cần chọn bàn/ghế
+      </div>
+    </section>
+
+    <main class="pos-layout">
+      <section class="menu-pane" aria-label="Thực đơn">
+        <div class="menu-toolbar">
+          <div class="search-box">
+            <input id="menu-search-input" type="search" placeholder="Tìm món (VD: Mỳ, Sủi cảo, Quẩy)..." aria-label="Tìm món" />
+          </div>
+          <div id="category-tabs" class="category-tabs" role="tablist"></div>
+        </div>
+
+        <div id="menu-empty-state" class="empty-state">
+          <p>Chưa có dữ liệu thực đơn. Vui lòng nhập mã nhân viên và nhấn <strong>Kết nối &amp; Tải thực đơn</strong>.</p>
+        </div>
+        <div id="menu-grid" class="menu-grid" hidden></div>
+      </section>
+
+      <aside id="cart-pane" class="cart-pane" aria-label="Giỏ hàng">
+        <div class="cart-header">
+          <div>
+            <h2>Giỏ hàng <span id="cart-count-badge" class="count-pill">0</span></h2>
+            <span id="cart-type-label" class="muted-small">Tại bàn</span>
+          </div>
+          <button id="clear-cart-btn" type="button" class="btn btn-sm btn-danger-ghost" disabled>Xóa hết</button>
+        </div>
+
+        <div id="cart-empty" class="cart-empty">
+          Chưa có món nào trong giỏ. Chọn món từ thực đơn để bắt đầu.
+        </div>
+
+        <div id="cart-items-list" class="cart-items-list"></div>
+
+        <div class="cart-footer">
+          <div id="order-notes-field" class="field compact">
+            <label for="order-notes-input">Ghi chú đơn hàng</label>
+            <input id="order-notes-input" type="text" maxlength="500" placeholder="VD: Lấy đũa thìa, giao nhanh..." />
+          </div>
+
+          <div class="totals-box">
+            <div class="total-row">
+              <span>Tạm tính món</span>
+              <span id="subtotal-base-val">0 VND</span>
+            </div>
+            <div class="total-row">
+              <span>Topping thêm</span>
+              <span id="subtotal-topping-val">0 VND</span>
+            </div>
+            <div class="total-row grand">
+              <span>Tổng cộng</span>
+              <span id="grand-total-val">0 VND</span>
+            </div>
+          </div>
+
+          <button id="review-order-btn" type="button" class="btn btn-primary btn-block" disabled>
+            Xem lại &amp; Đặt món
+          </button>
+        </div>
+      </aside>
+    </main>
+
+    <div id="mobile-cart-bar" class="mobile-cart-bar" hidden>
+      <div>
+        <strong id="mobile-cart-count">0 món</strong>
+        <span id="mobile-cart-total">0 VND</span>
+      </div>
+      <button id="mobile-open-cart-btn" type="button" class="btn btn-primary">Xem giỏ hàng</button>
     </div>
   </section>
 
-  <main class="pos-layout">
-    <section class="menu-pane" aria-label="Thực đơn">
-      <div class="menu-toolbar">
-        <div class="search-box">
-          <input id="menu-search-input" type="search" placeholder="Tìm món (VD: Mỳ, Sủi cảo, Quẩy)..." aria-label="Tìm món" />
+  <!-- TAB 2: SƠ ĐỒ BÀN (3x3) -->
+  <section id="tab-floor" class="tab-view page-container" hidden>
+    <div class="section-header">
+      <div>
+        <h2>Sơ đồ bàn (9 bàn · 36 ghế)</h2>
+        <div class="legend-row">
+          <span class="legend-item"><span class="dot dot-avail"></span> Trống</span>
+          <span class="legend-item"><span class="dot dot-occ"></span> Có khách</span>
+          <span class="legend-item"><span class="dot dot-unavail"></span> Tạm khóa</span>
         </div>
-        <div id="category-tabs" class="category-tabs" role="tablist"></div>
       </div>
-
-      <div id="menu-empty-state" class="empty-state">
-        <p>Chưa có dữ liệu thực đơn. Vui lòng nhập mã nhân viên và nhấn <strong>Kết nối &amp; Tải thực đơn</strong>.</p>
-      </div>
-      <div id="menu-grid" class="menu-grid" hidden></div>
-    </section>
-
-    <aside id="cart-pane" class="cart-pane" aria-label="Giỏ hàng">
-      <div class="cart-header">
-        <div>
-          <h2>Giỏ hàng <span id="cart-count-badge" class="count-pill">0</span></h2>
-          <span id="cart-type-label" class="muted-small">Tại bàn</span>
-        </div>
-        <button id="clear-cart-btn" type="button" class="btn btn-sm btn-danger-ghost" disabled>Xóa hết</button>
-      </div>
-
-      <div id="cart-empty" class="cart-empty">
-        Chưa có món nào trong giỏ. Chọn món từ thực đơn để bắt đầu.
-      </div>
-
-      <div id="cart-items-list" class="cart-items-list"></div>
-
-      <div class="cart-footer">
-        <div class="field compact">
-          <label for="order-notes-input">Ghi chú đơn hàng</label>
-          <input id="order-notes-input" type="text" maxlength="500" placeholder="VD: Lấy đũa thìa, giao nhanh..." />
-        </div>
-
-        <div class="totals-box">
-          <div class="total-row">
-            <span>Tạm tính món</span>
-            <span id="subtotal-base-val">0 VND</span>
-          </div>
-          <div class="total-row">
-            <span>Topping thêm</span>
-            <span id="subtotal-topping-val">0 VND</span>
-          </div>
-          <div class="total-row grand">
-            <span>Tổng cộng</span>
-            <span id="grand-total-val">0 VND</span>
-          </div>
-        </div>
-
-        <button id="review-order-btn" type="button" class="btn btn-primary btn-block" disabled>
-          Xem lại &amp; Đặt món
-        </button>
-      </div>
-    </aside>
-  </main>
-
-  <!-- Mobile sticky cart bar -->
-  <div id="mobile-cart-bar" class="mobile-cart-bar" hidden>
-    <div>
-      <strong id="mobile-cart-count">0 món</strong>
-      <span id="mobile-cart-total">0 VND</span>
+      <button id="floor-refresh-btn" type="button" class="btn">Làm mới sơ đồ</button>
     </div>
-    <button id="mobile-open-cart-btn" type="button" class="btn btn-primary">Xem giỏ hàng</button>
-  </div>
+    <div id="floor-grid" class="floor-grid"></div>
+  </section>
+
+  <!-- TAB 3: ĐƠN ĐANG MỞ -->
+  <section id="tab-orders" class="tab-view page-container" hidden>
+    <div class="section-header">
+      <h2>Đơn hàng đang mở</h2>
+      <div class="header-actions">
+        <button id="open-merge-btn" type="button" class="btn btn-primary" disabled>Gộp đơn đã chọn (0)</button>
+        <button id="orders-refresh-btn" type="button" class="btn">Làm mới</button>
+      </div>
+    </div>
+
+    <div class="filters-bar">
+      <select id="filter-order-type" class="select-touch" aria-label="Lọc loại đơn">
+        <option value="">Tất cả loại</option>
+        <option value="DINE_IN">Tại bàn</option>
+        <option value="TAKEAWAY">Mang về</option>
+      </select>
+      <select id="filter-table-num" class="select-touch" aria-label="Lọc theo bàn">
+        <option value="">Tất cả bàn</option>
+      </select>
+      <select id="filter-seat-id" class="select-touch" aria-label="Lọc theo ghế">
+        <option value="">Tất cả ghế</option>
+      </select>
+      <input id="filter-order-search" type="search" class="select-touch" placeholder="Tìm mã đơn (#...)..." aria-label="Tìm mã đơn" />
+    </div>
+
+    <div id="active-orders-list" class="orders-list"></div>
+  </section>
+
+  <!-- TAB 4: LỊCH SỬ (PHASE 3 PLACEHOLDER) -->
+  <section id="tab-history" class="tab-view page-container" hidden>
+    <div class="empty-state">
+      <h2>Lịch sử đơn hàng &amp; Thanh toán</h2>
+      <p>Tính năng thanh toán (Unpaid/Paid), xem lại đơn đã hoàn tất và báo cáo thuộc <strong>Phase 3</strong>.</p>
+    </div>
+  </section>
 
   <!-- Item Customize / Edit Modal -->
   <div id="item-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="item-modal-title">
@@ -131,7 +199,6 @@
         </div>
         <button id="item-modal-close" type="button" class="btn btn-sm" aria-label="Đóng">Đóng</button>
       </div>
-
       <div class="modal-body">
         <div class="modal-row-split">
           <div class="field">
@@ -142,18 +209,15 @@
               <button id="modal-qty-inc" type="button" class="btn stepper-btn" aria-label="Tăng số lượng">+</button>
             </div>
           </div>
-
           <div id="modal-seat-field" class="field">
             <label for="modal-seat-select">Ghế phục vụ</label>
             <select id="modal-seat-select" class="select-touch"></select>
           </div>
         </div>
-
         <div class="field">
           <label>Tùy chọn món (Miễn phí)</label>
           <div id="modal-modifiers-list" class="modifiers-grid"></div>
         </div>
-
         <div class="field">
           <label id="modal-topping-label">Thêm topping (15.000 VND / phần)</label>
           <div class="topping-row">
@@ -165,13 +229,11 @@
             <span id="modal-top-subtotal" class="muted-small">+0 VND</span>
           </div>
         </div>
-
         <div class="field">
           <label for="modal-note-input">Ghi chú riêng cho món</label>
           <input id="modal-note-input" type="text" maxlength="200" placeholder="VD: Nước dùng nóng, ít mặn..." />
         </div>
       </div>
-
       <div class="modal-footer">
         <div class="modal-total-preview">
           <span>Thành tiền:</span>
@@ -189,25 +251,70 @@
         <h3 id="checkout-modal-title">Xác nhận đơn hàng</h3>
         <button id="checkout-modal-close" type="button" class="btn btn-sm">Đóng</button>
       </div>
-
       <div id="checkout-review-view" class="modal-body">
         <div id="checkout-meta" class="checkout-meta"></div>
         <div id="checkout-items-list" class="checkout-items-list"></div>
         <div id="checkout-totals" class="totals-box"></div>
         <p id="checkout-error" class="inline-error" hidden></p>
       </div>
-
       <div id="checkout-review-footer" class="modal-footer">
         <button id="checkout-back-btn" type="button" class="btn">Quay lại sửa</button>
         <button id="checkout-submit-btn" type="button" class="btn btn-primary">Xác nhận đặt món</button>
       </div>
-
       <div id="checkout-success-view" class="modal-body success-view" hidden>
         <div class="success-badge">Đã xác nhận</div>
         <h4 id="confirmed-order-number" class="order-number-hero">#000</h4>
         <p id="confirmed-order-id" class="muted-small"></p>
         <p id="confirmed-order-total" class="confirmed-total"></p>
-        <button id="start-new-order-btn" type="button" class="btn btn-primary btn-block">Tạo đơn mới</button>
+        <button id="start-new-order-btn" type="button" class="btn btn-primary btn-block">Tiếp tục</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Detail Modal (Phase 2) -->
+  <div id="order-detail-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <div>
+          <h3 id="detail-order-title">Chi tiết đơn hàng</h3>
+          <p id="detail-order-sub" class="muted-small"></p>
+        </div>
+        <button id="detail-modal-close" type="button" class="btn btn-sm">Đóng</button>
+      </div>
+      <div id="detail-modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <button id="detail-split-btn" type="button" class="btn">Tách đơn</button>
+        <button id="detail-add-items-btn" type="button" class="btn btn-primary">+ Thêm món vào đơn</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Merge Orders Modal (Phase 2) -->
+  <div id="merge-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h3>Xác nhận gộp đơn hàng</h3>
+        <button id="merge-modal-close" type="button" class="btn btn-sm">Đóng</button>
+      </div>
+      <div id="merge-modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <button id="merge-cancel-btn" type="button" class="btn">Hủy</button>
+        <button id="merge-confirm-btn" type="button" class="btn btn-primary">Xác nhận gộp đơn</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Split Order Modal (Phase 2) -->
+  <div id="split-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h3>Tách đơn hàng</h3>
+        <button id="split-modal-close" type="button" class="btn btn-sm">Đóng</button>
+      </div>
+      <div id="split-modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <button id="split-cancel-btn" type="button" class="btn">Hủy</button>
+        <button id="split-confirm-btn" type="button" class="btn btn-primary">Xác nhận tách đơn</button>
       </div>
     </div>
   </div>
@@ -216,6 +323,7 @@
   <script src="js/format.js"></script>
   <script src="js/cart.js"></script>
   <script src="js/api.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

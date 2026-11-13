@@ -200,5 +200,29 @@
     createOrder: function (orderPayload) {
       return requestPost('createOrder', orderPayload);
     },
+    syncStatus: function () {
+      return requestPost('syncStatus', {});
+    },
+    getFloorState: function () {
+      return requestPost('getFloorState', {});
+    },
+    listActiveOrders: function (filters) {
+      return requestPost('listActiveOrders', { filters: filters || {} });
+    },
+    getOrderDetail: function (orderId) {
+      return requestPost('getOrderDetail', { order_id: orderId });
+    },
+    addItemsToOrder: function (payload) {
+      return requestPost('addItemsToOrder', payload);
+    },
+    moveOrderItem: function (payload) {
+      return requestPost('moveOrderItem', payload);
+    },
+    mergeOrders: function (payload) {
+      return requestPost('mergeOrders', payload);
+    },
+    splitOrder: function (payload) {
+      return requestPost('splitOrder', payload);
+    },
   };
 });
