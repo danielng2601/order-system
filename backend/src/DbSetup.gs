@@ -81,38 +81,41 @@ function getDatabaseSpreadsheet() {
   const props = PropertiesService.getScriptProperties();
   const rawEnv = props.getProperty('ROMS_ENV');
   const envName = rawEnv ? String(rawEnv).trim().toUpperCase() : '';
+  const allowedEnvs = ['LOCAL', 'STAGING', 'PRODUCTION'];
 
-  if (envName === 'STAGING' || envName === 'PRODUCTION') {
-    const envSpecificId = String(props.getProperty(envName + '_SPREADSHEET_ID') || '').trim();
-    const defaultId = String(props.getProperty('SPREADSHEET_ID') || '').trim();
-    const targetId = envSpecificId || defaultId;
+  if (allowedEnvs.indexOf(envName) === -1) {
+    throw new Error(
+      'ROMS_ENV must be explicitly set to LOCAL, STAGING, or PRODUCTION in Script Properties (got: "' +
+        (rawEnv || 'UNSET') +
+        '").'
+    );
+  }
 
-    if (envName === 'STAGING') {
-      const prodId = String(props.getProperty('PRODUCTION_SPREADSHEET_ID') || '').trim();
-      if (prodId && targetId && targetId === prodId) {
-        throw new Error('Environment safety violation: STAGING cannot use PRODUCTION_SPREADSHEET_ID.');
-      }
+  const requiredProp = envName + '_SPREADSHEET_ID';
+  const targetId = String(props.getProperty(requiredProp) || '').trim();
+  if (!targetId) {
+    throw new Error(
+      requiredProp +
+        ' must be set in Script Properties for ROMS_ENV=' +
+        envName +
+        '. Generic SPREADSHEET_ID and bound spreadsheet fallbacks are disabled.'
+    );
+  }
+
+  if (envName === 'STAGING') {
+    const prodId = String(props.getProperty('PRODUCTION_SPREADSHEET_ID') || '').trim();
+    if (prodId && targetId === prodId) {
+      throw new Error('Environment safety violation: STAGING_SPREADSHEET_ID cannot match PRODUCTION_SPREADSHEET_ID.');
     }
-
-    if (!targetId) {
-      throw new Error(
-        'SPREADSHEET_ID (or ' + envName + '_SPREADSHEET_ID) must be set in Script Properties when ROMS_ENV=' + envName + '.'
-      );
+  }
+  if (envName === 'PRODUCTION') {
+    const stagingId = String(props.getProperty('STAGING_SPREADSHEET_ID') || '').trim();
+    if (stagingId && targetId === stagingId) {
+      throw new Error('Environment safety violation: PRODUCTION_SPREADSHEET_ID cannot match STAGING_SPREADSHEET_ID.');
     }
-    return SpreadsheetApp.openById(targetId);
   }
 
-  const spreadsheetId = props.getProperty('SPREADSHEET_ID');
-  if (spreadsheetId) {
-    return SpreadsheetApp.openById(spreadsheetId);
-  }
-  const active = SpreadsheetApp.getActiveSpreadsheet();
-  if (active) {
-    return active;
-  }
-  throw new Error(
-    'SPREADSHEET_ID is not set in Script Properties and no active spreadsheet is bound.'
-  );
+  return SpreadsheetApp.openById(targetId);
 }
 
 /**
@@ -497,7 +500,16 @@ function seedTablesSeatsIfEmpty_(ss) {
 function backupDatabaseToDrive() {
   const props = PropertiesService.getScriptProperties();
   const rawEnv = props.getProperty('ROMS_ENV');
-  const envName = rawEnv ? String(rawEnv).trim().toUpperCase() : 'UNSPECIFIED';
+  const envName = rawEnv ? String(rawEnv).trim().toUpperCase() : '';
+  const allowedEnvs = ['LOCAL', 'STAGING', 'PRODUCTION'];
+
+  if (allowedEnvs.indexOf(envName) === -1) {
+    return {
+      ok: false,
+      environment: envName || 'UNSET',
+      error: 'ROMS_ENV must be explicitly set to LOCAL, STAGING, or PRODUCTION before creating a backup.',
+    };
+  }
 
   try {
     const ss = getDatabaseSpreadsheet();
@@ -507,9 +519,7 @@ function backupDatabaseToDrive() {
 
     const stamp = Utilities.formatDate(new Date(), ROMS_CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
     const baseName = ss.getName();
-    const envTag =
-      envName !== 'UNSPECIFIED' && baseName.toUpperCase().indexOf(envName) === -1 ? '_' + envName : '';
-    const backupName = baseName + envTag + '_backup_' + stamp;
+    const backupName = baseName + '_' + envName + '_backup_' + stamp;
     const file = DriveApp.getFileById(ss.getId()).makeCopy(backupName, backupFolder);
 
     return {
