@@ -129,7 +129,8 @@ function createGasMockEnv(options = {}) {
   let lockBusy = Boolean(options.lockBusy);
   const propsMap = Object.assign(
     {
-      SPREADSHEET_ID: 'mock-spreadsheet-id',
+      ROMS_ENV: 'LOCAL',
+      LOCAL_SPREADSHEET_ID: 'mock-spreadsheet-id',
       STAFF_PASSCODE: 'test-pass-999',
     },
     options.properties || {}

@@ -31,7 +31,7 @@ All 10 `.gs` files + `appsscript.json` (11 files total) in `backend/src/` must b
    *(Or copy-paste each file in `backend/src/` manually into the Apps Script editor.)*
 4. Open **Project Settings → Script Properties** and add:
    - `ROMS_ENV` = `STAGING`
-   - `SPREADSHEET_ID` = `<STAGING_SPREADSHEET_ID>`
+   - `STAGING_SPREADSHEET_ID` = `<STAGING_SPREADSHEET_ID>`
    - `STAFF_PASSCODE` = `<STAGING_STAFF_PASSCODE>`
 5. Initialize and verify the database in the Apps Script editor:
    - Run `setupDatabase()` (grant Google Sheets and Google Drive permissions).

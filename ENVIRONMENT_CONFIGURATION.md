@@ -15,16 +15,21 @@ ROMS enforces strict separation across three explicit environments:
 - **Fail-Closed Guarantees:**
   - Unknown `?env=` values return `INVALID_ENV` and block API requests.
   - Missing or placeholder URLs for `STAGING` or `LOCAL` return `UNCONFIGURED` and **never** fall back to `PRODUCTION`.
-  - Manual URL overrides in **Cài đặt** (`sessionStorage`) are rejected (`CROSS_ENV_OVERRIDE`) if they match another environment's configured URL, clear any stale `session_token` when changed, and trigger a visible warning (`#url-override-warning` + `#env-badge`).
-  - `sessionStorage` keys (`session_token`, `session_expires_ms`, `gas_url`) are prefixed per environment (`roms_local_`, `roms_staging_`, `roms_production_`) so tokens and URLs cannot leak across environments.
+  - `ROMS_API.login()` and unverified `POST` requests perform a mandatory `?action=health` handshake first and block (`ENV_MISMATCH` / `ENV_HANDSHAKE_FAILED`) if the backend `ROMS_ENV` does not match the frontend environment.
+  - Manual URL overrides in **Cài đặt** (`sessionStorage`) are rejected (`CROSS_ENV_OVERRIDE`) if they match another environment's configured URL, must pass the backend health handshake, clear any stale `session_token` when changed, and trigger a visible warning (`#url-override-warning` + `#env-badge`).
+  - `sessionStorage` keys (`session_token`, `session_expires_ms`, `gas_url`, `verified_env_url`, `verified_env_name`) are prefixed per environment (`roms_local_`, `roms_staging_`, `roms_production_`) so tokens and URLs cannot leak across environments.
   - `localStorage` is never used.
   - The header displays `#env-badge` (`LOCAL`, `STAGING`, or `PRODUCTION`).
 
 ## 3. Backend Configuration (`Script Properties` in GAS)
 Set per-project in Google Apps Script **Project Settings → Script Properties**:
-- `SPREADSHEET_ID` (or `<ENV>_SPREADSHEET_ID`, e.g. `STAGING_SPREADSHEET_ID`): `<STAGING_SPREADSHEET_ID>` or `<PROD_SPREADSHEET_ID>`. When `ROMS_ENV` is `STAGING` or `PRODUCTION`, `getDatabaseSpreadsheet()` requires an explicit ID (never falls back to `getActiveSpreadsheet()`) and refuses `STAGING` if it matches `PRODUCTION_SPREADSHEET_ID`.
+- `ROMS_ENV`: `LOCAL`, `STAGING`, or `PRODUCTION` (required by `getDatabaseSpreadsheet()` and `backupDatabaseToDrive()`; informational in `?action=health`, never used for authorization).
+- `<ENV>_SPREADSHEET_ID`:
+  - `LOCAL` uses **only** `LOCAL_SPREADSHEET_ID`.
+  - `STAGING` uses **only** `STAGING_SPREADSHEET_ID`.
+  - `PRODUCTION` uses **only** `PRODUCTION_SPREADSHEET_ID`.
+  - Generic `SPREADSHEET_ID` and bound `getActiveSpreadsheet()` fallbacks are disabled.
 - `STAFF_PASSCODE`: `<STRONG_ENV_SPECIFIC_PASSCODE>` (never reuse staging passcodes in production)
-- `ROMS_ENV`: `STAGING` or `PRODUCTION` (informational only in `?action=health`; never used for authorization)
 
 ## 4. Security Rules
 - **Never** commit `frontend/js/config.js`, `backend/.clasp.json`, `.env`, passcodes, session tokens, or real `SPREADSHEET_ID` values.

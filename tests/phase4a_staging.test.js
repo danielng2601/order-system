@@ -159,7 +159,7 @@ test('Phase 4A Backend: health reports ROMS_ENV and backupDatabaseToDrive create
     },
     PropertiesService: {
       getScriptProperties: () => ({
-        getProperty: (k) => (k === 'ROMS_ENV' ? 'STAGING' : k === 'SPREADSHEET_ID' ? 'ss_staging_1' : null),
+        getProperty: (k) => (k === 'ROMS_ENV' ? 'STAGING' : k === 'STAGING_SPREADSHEET_ID' ? 'ss_staging_1' : null),
       }),
     },
     SpreadsheetApp: {
@@ -194,7 +194,7 @@ test('Phase 4A Backend: health reports ROMS_ENV and backupDatabaseToDrive create
   const backup = ctx.backupDatabaseToDrive();
   assert.equal(backup.ok, true);
   assert.equal(backup.fileId, 'backup_file_1');
-  assert.equal(backup.fileName, 'ROMS_Database_Staging_backup_20261113-020000');
+  assert.equal(backup.fileName, 'ROMS_Database_Staging_STAGING_backup_20261113-020000');
   assert.equal(copiedFiles[0].folderName, 'ROMS_Backups');
 });
 
@@ -236,9 +236,10 @@ test('Phase 4A.1 Audit: manual URL override blocks cross-env URLs, tracks overri
   assert.equal(g.ROMS_API.getApiUrl(), 'https://script.google.com/macros/s/STAGING_ID/exec');
 });
 
-test('Phase 4A.1 Audit: DbSetup.getDatabaseSpreadsheet enforces env isolation and backupDatabaseToDrive handles errors', () => {
+test('Phase 4A.2 Audit: strict spreadsheet isolation and backup environment safety in DbSetup.gs', () => {
   function runDbSetupWithProps(propsMap, driveShouldThrow = false) {
-    const ss = { getName: () => 'ROMS_Database', getId: () => 'ss_1' };
+    const ss = { getName: () => 'BoundSheet', getId: () => 'bound_1' };
+    const createdCopies = [];
     const ctx = {
       console,
       Intl,
@@ -265,9 +266,13 @@ test('Phase 4A.1 Audit: DbSetup.getDatabaseSpreadsheet enforces env isolation an
           return { hasNext: () => true, next: () => ({ name: 'ROMS_Backups' }) };
         },
         getFileById: () => ({
-          makeCopy: (name) => ({ getId: () => 'b1', getName: () => name }),
+          makeCopy: (name) => {
+            createdCopies.push(name);
+            return { getId: () => 'b1', getName: () => name };
+          },
         }),
       },
+      _createdCopies: createdCopies,
     };
     vm.createContext(ctx);
     for (const f of ['backend/src/Config.gs', 'backend/src/Validation.gs', 'backend/src/DbSetup.gs']) {
@@ -276,27 +281,158 @@ test('Phase 4A.1 Audit: DbSetup.getDatabaseSpreadsheet enforces env isolation an
     return ctx;
   }
 
-  // Missing SPREADSHEET_ID when ROMS_ENV=STAGING must fail closed (never fall back to getActiveSpreadsheet)
-  const ctxMissing = runDbSetupWithProps({ ROMS_ENV: 'STAGING' });
-  assert.throws(() => ctxMissing.getDatabaseSpreadsheet(), /must be set in Script Properties/);
+  // 1. Missing STAGING_SPREADSHEET_ID -> throws
+  assert.throws(
+    () => runDbSetupWithProps({ ROMS_ENV: 'STAGING' }).getDatabaseSpreadsheet(),
+    /STAGING_SPREADSHEET_ID must be set/
+  );
 
-  // STAGING pointing to PRODUCTION_SPREADSHEET_ID must throw safety violation
-  const ctxCollision = runDbSetupWithProps({
-    ROMS_ENV: 'STAGING',
-    SPREADSHEET_ID: 'prod_sheet_123',
-    PRODUCTION_SPREADSHEET_ID: 'prod_sheet_123',
-  });
-  assert.throws(() => ctxCollision.getDatabaseSpreadsheet(), /STAGING cannot use PRODUCTION_SPREADSHEET_ID/);
+  // 2. STAGING_SPREADSHEET_ID configured correctly -> opens it
+  const stgSs = runDbSetupWithProps({ ROMS_ENV: 'STAGING', STAGING_SPREADSHEET_ID: 'stg_sheet_1' }).getDatabaseSpreadsheet();
+  assert.equal(stgSs.getId(), 'stg_sheet_1');
 
-  // Backup includes _STAGING_ tag when not in spreadsheet name, and catches DriveApp failure cleanly
-  const ctxOk = runDbSetupWithProps({ ROMS_ENV: 'STAGING', SPREADSHEET_ID: 'stg_1' });
-  const okBackup = ctxOk.backupDatabaseToDrive();
-  assert.equal(okBackup.ok, true);
-  assert.equal(okBackup.environment, 'STAGING');
-  assert.match(okBackup.fileName, /_STAGING_backup_20261113-020000/);
+  // 3. STAGING_SPREADSHEET_ID missing while generic SPREADSHEET_ID exists -> throws (no generic fallback)
+  assert.throws(
+    () => runDbSetupWithProps({ ROMS_ENV: 'STAGING', SPREADSHEET_ID: 'arbitrary_id' }).getDatabaseSpreadsheet(),
+    /STAGING_SPREADSHEET_ID must be set/
+  );
 
-  const ctxFail = runDbSetupWithProps({ ROMS_ENV: 'STAGING', SPREADSHEET_ID: 'stg_1' }, true);
-  const failBackup = ctxFail.backupDatabaseToDrive();
+  // 4. STAGING with PRODUCTION_SPREADSHEET_ID only -> throws
+  assert.throws(
+    () => runDbSetupWithProps({ ROMS_ENV: 'STAGING', PRODUCTION_SPREADSHEET_ID: 'prod_1' }).getDatabaseSpreadsheet(),
+    /STAGING_SPREADSHEET_ID must be set/
+  );
+
+  // 5. PRODUCTION with STAGING_SPREADSHEET_ID only -> throws
+  assert.throws(
+    () => runDbSetupWithProps({ ROMS_ENV: 'PRODUCTION', STAGING_SPREADSHEET_ID: 'stg_1' }).getDatabaseSpreadsheet(),
+    /PRODUCTION_SPREADSHEET_ID must be set/
+  );
+
+  // 6. Missing LOCAL_SPREADSHEET_ID -> throws
+  assert.throws(
+    () => runDbSetupWithProps({ ROMS_ENV: 'LOCAL', SPREADSHEET_ID: 'arb_1' }).getDatabaseSpreadsheet(),
+    /LOCAL_SPREADSHEET_ID must be set/
+  );
+
+  // 7. Unknown ROMS_ENV -> throws
+  assert.throws(
+    () => runDbSetupWithProps({ ROMS_ENV: 'QA', STAGING_SPREADSHEET_ID: 'stg_1' }).getDatabaseSpreadsheet(),
+    /ROMS_ENV must be explicitly set/
+  );
+
+  // 8. STAGING_SPREADSHEET_ID === PRODUCTION_SPREADSHEET_ID -> throws
+  assert.throws(
+    () =>
+      runDbSetupWithProps({
+        ROMS_ENV: 'STAGING',
+        STAGING_SPREADSHEET_ID: 'same_id',
+        PRODUCTION_SPREADSHEET_ID: 'same_id',
+      }).getDatabaseSpreadsheet(),
+    /cannot match PRODUCTION_SPREADSHEET_ID/
+  );
+
+  // 9. Backup environment safety: missing/invalid ROMS_ENV refuses to create Drive file
+  const ctxBadBackup = runDbSetupWithProps({ SPREADSHEET_ID: 'arb_1' });
+  const badBackup = ctxBadBackup.backupDatabaseToDrive();
+  assert.equal(badBackup.ok, false);
+  assert.equal(ctxBadBackup._createdCopies.length, 0);
+
+  // 10. STAGING vs PRODUCTION backups have distinct environment-tagged names
+  const okStg = runDbSetupWithProps({ ROMS_ENV: 'STAGING', STAGING_SPREADSHEET_ID: 'stg_1' }).backupDatabaseToDrive();
+  const okProd = runDbSetupWithProps({ ROMS_ENV: 'PRODUCTION', PRODUCTION_SPREADSHEET_ID: 'prod_1' }).backupDatabaseToDrive();
+  assert.equal(okStg.ok, true);
+  assert.equal(okProd.ok, true);
+  assert.match(okStg.fileName, /_STAGING_backup_20261113-020000/);
+  assert.match(okProd.fileName, /_PRODUCTION_backup_20261113-020000/);
+  assert.notEqual(okStg.fileName, okProd.fileName);
+
+  // 11. DriveApp error is caught cleanly
+  const failBackup = runDbSetupWithProps({ ROMS_ENV: 'STAGING', STAGING_SPREADSHEET_ID: 'stg_1' }, true).backupDatabaseToDrive();
   assert.equal(failBackup.ok, false);
   assert.equal(failBackup.error, 'Drive quota exceeded');
+});
+
+test('Phase 4A.2 Audit: frontend-backend environment handshake blocks mismatches, network failures, and custom URL bypasses', async () => {
+  const cfg = {
+    ENV: 'STAGING',
+    ENVIRONMENTS: {
+      LOCAL: { label: 'LOCAL', GAS_WEB_APP_URL: 'http://localhost:8080/exec' },
+      STAGING: { label: 'STAGING', GAS_WEB_APP_URL: 'https://script.google.com/macros/s/STAGING_ID/exec' },
+      PRODUCTION: { label: 'PRODUCTION', GAS_WEB_APP_URL: 'https://script.google.com/macros/s/PROD_ID/exec' },
+    },
+  };
+
+  function makeFetch(healthEnv, loginCallsOut) {
+    return async (url, opts) => {
+      if ((!opts || opts.method === 'GET') && String(url).includes('action=health')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({ ok: true, data: { environment: healthEnv }, error: null }),
+        };
+      }
+      const body = JSON.parse(opts.body);
+      if (body.action === 'login') {
+        loginCallsOut.push(body);
+        return {
+          ok: true,
+          text: async () => JSON.stringify({ ok: true, data: { session_token: 'tok_' + healthEnv, expires_at_ms: Date.now() + 60000 }, error: null }),
+        };
+      }
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, data: { pong: true }, error: null }),
+      };
+    };
+  }
+
+  // 1. STAGING frontend + STAGING backend -> allowed
+  const loginCallsOk = [];
+  const gOk = loadFrontendEnvAndApi({ search: '?env=staging', romsConfig: cfg, fetchImpl: makeFetch('STAGING', loginCallsOk) });
+  const loginOk = await gOk.ROMS_API.login('pass123');
+  assert.equal(loginOk.ok, true);
+  assert.equal(loginCallsOk.length, 1);
+
+  // 2. STAGING frontend + PRODUCTION backend -> blocked (login never sent)
+  const loginCallsMismatch = [];
+  const gMismatch = loadFrontendEnvAndApi({ search: '?env=staging', romsConfig: cfg, fetchImpl: makeFetch('PRODUCTION', loginCallsMismatch) });
+  await assert.rejects(() => gMismatch.ROMS_API.login('pass123'), (err) => err.code === 'ENV_MISMATCH');
+  assert.equal(loginCallsMismatch.length, 0);
+
+  // 3. PRODUCTION frontend + STAGING backend -> blocked
+  const loginCallsProdStg = [];
+  const gProdStg = loadFrontendEnvAndApi({ search: '?env=production', romsConfig: cfg, fetchImpl: makeFetch('STAGING', loginCallsProdStg) });
+  await assert.rejects(() => gProdStg.ROMS_API.login('pass123'), (err) => err.code === 'ENV_MISMATCH');
+  assert.equal(loginCallsProdStg.length, 0);
+
+  // 4. STAGING frontend + UNSPECIFIED backend -> blocked
+  const loginCallsUnspec = [];
+  const gUnspec = loadFrontendEnvAndApi({ search: '?env=staging', romsConfig: cfg, fetchImpl: makeFetch('UNSPECIFIED', loginCallsUnspec) });
+  await assert.rejects(() => gUnspec.ROMS_API.login('pass123'), (err) => err.code === 'ENV_MISMATCH');
+  assert.equal(loginCallsUnspec.length, 0);
+
+  // 5. Unknown frontend environment -> blocked
+  const gUnknown = loadFrontendEnvAndApi({ search: '?env=unknown', romsConfig: cfg, fetchImpl: makeFetch('STAGING', []) });
+  await assert.rejects(() => gUnknown.ROMS_API.login('pass123'), (err) => err.code === 'INVALID_ENV');
+
+  // 6. Network error on health check -> blocked (no silent bypass)
+  const gNetErr = loadFrontendEnvAndApi({
+    search: '?env=staging',
+    romsConfig: cfg,
+    fetchImpl: async () => {
+      throw new Error('ECONNREFUSED');
+    },
+  });
+  await assert.rejects(() => gNetErr.ROMS_API.login('pass123'), (err) => err.code === 'NETWORK_ERROR');
+
+  // 7. Custom URL override pointing to a PRODUCTION backend (not in config) -> blocked by handshake, and blocks mutations
+  const loginCallsCustom = [];
+  const gCustom = loadFrontendEnvAndApi({ search: '?env=staging', romsConfig: cfg, fetchImpl: makeFetch('PRODUCTION', loginCallsCustom) });
+  gCustom.ROMS_API.setSession('stale_tok', Date.now() + 60000);
+  gCustom.ROMS_API.setApiUrl('https://script.google.com/macros/s/UNLISTED_PROD_URL/exec');
+  assert.equal(gCustom.ROMS_API.getSessionToken(), '');
+  await assert.rejects(() => gCustom.ROMS_API.login('pass123'), (err) => err.code === 'ENV_MISMATCH');
+  assert.equal(loginCallsCustom.length, 0);
+  gCustom.ROMS_API.setSession('injected_tok', Date.now() + 60000);
+  await assert.rejects(() => gCustom.ROMS_API.createOrder({}), (err) => err.code === 'ENV_MISMATCH');
 });

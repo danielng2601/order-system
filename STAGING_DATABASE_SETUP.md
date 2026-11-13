@@ -7,7 +7,7 @@
 2. Keep sharing restricted/private (do not share publicly).
 3. Copy the Spreadsheet ID from its URL:
    `https://docs.google.com/spreadsheets/d/<STAGING_SPREADSHEET_ID>/edit`
-4. Set `SPREADSHEET_ID = <STAGING_SPREADSHEET_ID>` in the **Staging** GAS project's Script Properties (never point Staging GAS at the Production Spreadsheet ID).
+4. Set `ROMS_ENV = STAGING` and `STAGING_SPREADSHEET_ID = <STAGING_SPREADSHEET_ID>` in the **Staging** GAS project's Script Properties (generic `SPREADSHEET_ID` and `getActiveSpreadsheet()` fallbacks are disabled).
 
 ## 2. Schema Initialization (`setupDatabase()`)
 Running `setupDatabase()` in Staging GAS creates/verifies all 9 sheets (Schema `1.3.0`):

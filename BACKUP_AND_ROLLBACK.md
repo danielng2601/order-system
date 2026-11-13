@@ -2,10 +2,11 @@
 
 ## 1. Automated & Manual Google Drive Backups (Implemented, Mock-Tested Only)
 `backupDatabaseToDrive()` in `backend/src/DbSetup.gs`:
+- Requires `ROMS_ENV` to be explicitly `LOCAL`, `STAGING`, or `PRODUCTION` (refuses to create a Drive copy if missing/invalid).
 - Locates (or creates) the `ROMS_Backups` folder in Google Drive.
-- Copies the **entire** active `SPREADSHEET_ID` spreadsheet (all 9 sheets, values, formulas, and headers) via `DriveApp.getFileById(ss.getId()).makeCopy(...)`.
-- Names the backup `<SpreadsheetName>[_<ENV>]_backup_yyyyMMdd-HHmmss` (`Asia/Ho_Chi_Minh`) so staging and production backups are distinguishable.
-- Returns `{ ok: true, environment, fileId, fileName }` on success, or `{ ok: false, environment, error }` if `DriveApp` fails.
+- Copies the **entire** active `<ENV>_SPREADSHEET_ID` spreadsheet (all 9 sheets, values, formulas, and headers) via `DriveApp.getFileById(ss.getId()).makeCopy(...)`.
+- Names the backup `<SpreadsheetName>_<ENV>_backup_yyyyMMdd-HHmmss` (`Asia/Ho_Chi_Minh`) so staging and production backups are always distinguishable and cannot collide.
+- Returns `{ ok: true, environment, fileId, fileName }` on success, or `{ ok: false, environment, error }` if `ROMS_ENV` is invalid or `DriveApp` fails.
 - **Concurrency Note:** `backupDatabaseToDrive()` does **not** acquire `LockService.getScriptLock()`, so scheduled backups should run off-hours (e.g., 1:00 AM – 2:00 AM `Asia/Ho_Chi_Minh`).
 
 ### Staging Verification `[REQUIRES OWNER]`
