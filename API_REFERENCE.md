@@ -72,16 +72,51 @@ Creates a new `DINE_IN` or `TAKEAWAY` order inside `LockService.getScriptLock()`
     },
     "items": [],
     "printStatus": { "printed": false, "skipped": true, "reason": "PrinterEnabled is false" },
-    "replayed": false
+    "replayed": false,
+    "syncRevision": 2
   },
   "error": null
 }
 ```
 
+### Phase 2 Endpoints (Authenticated `POST`)
+
+All Phase 2 endpoints authenticate via `staffPasscode` (or valid `sessionToken`) in the JSON body.
+
+1. **`syncStatus`**
+   - Body: `{ "action": "syncStatus", "staffPasscode": "..." }`
+   - Returns: `{ syncRevision, serverTime, activeOrderCount }`
+2. **`getFloorState`**
+   - Body: `{ "action": "getFloorState", "staffPasscode": "..." }`
+   - Returns: `{ syncRevision, summary, tables: [ { table_number, total_seats, occupied_seats, available_seats, unavailable_seats, active_orders_count, active_total_vnd, seats: [...], active_orders: [...] } ], takeaway_orders: [...] }`
+3. **`listActiveOrders`**
+   - Body: `{ "action": "listActiveOrders", "staffPasscode": "...", "filters": { "orderType": "DINE_IN|TAKEAWAY", "tableNumber": 1, "status": "Draft|Confirmed", "paymentStatus": "Unpaid|Paid", "search": "..." } }`
+   - Returns: `{ syncRevision, orders: [...], total }`
+4. **`getOrderDetail`**
+   - Body: `{ "action": "getOrderDetail", "staffPasscode": "...", "orderId": "ORD-..." }`
+   - Returns: `{ syncRevision, order, items, grouped_by_table_seat }`
+5. **`addItemsToOrder`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "addItemsToOrder", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderId": "ORD-...", "expected_version": 1, "items": [...] }`
+   - Returns: `{ order, items, added_items, replayed, syncRevision }`
+6. **`moveOrderItem`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "moveOrderItem", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderId": "ORD-...", "orderItemId": "ORD-...-L01", "targetSeatId": "T2-S1", "expected_version": 2 }`
+   - Returns: `{ order, items, moved_item, replayed, syncRevision }`
+7. **`mergeOrders`** *(Locked + Idempotent + Optimistic Version Map)*
+   - Body: `{ "action": "mergeOrders", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderIds": ["ORD-A", "ORD-B"], "targetOrderId": "ORD-A", "expectedVersions": { "ORD-A": 1, "ORD-B": 1 } }`
+   - Returns: `{ order, items, merged_order_ids, source_orders, replayed, syncRevision }`
+8. **`splitOrder`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "splitOrder", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderId": "ORD-...", "expected_version": 1, "itemIds": ["ORD-...-L01"], "notes": "..." }`
+   - Returns: `{ source_order, source_items, new_order, new_items, replayed, syncRevision }`
+
 ## Error Codes
 - `BAD_REQUEST` — Invalid JSON, missing `action`, or missing `idempotency_key`.
+- `METHOD_NOT_ALLOWED` — Attempted `GET` on a mutating action.
 - `UNAUTHORIZED` — Missing/invalid `STAFF_PASSCODE` or unset Script Property.
-- `VALIDATION_ERROR` — Unknown/sold-out item, invalid quantity (`1..100`), invalid topping (`0..20`), invalid modifier, or missing/invalid `seat_id` for `DINE_IN`.
+- `SESSION_EXPIRED` — Session token expired or invalid.
+- `NOT_FOUND` — Target `orderId` or `orderItemId` does not exist.
+- `INVALID_STATE` — Order is `Cancelled` or `Merged`, or operation violates order type (e.g., moving a `TAKEAWAY` item to a seat).
+- `VERSION_CONFLICT` — `expected_version` (or `expectedVersions[orderId]`) does not match current `Orders.version`. Client should refresh and retry.
+- `VALIDATION_ERROR` — Unknown/sold-out item, invalid quantity (`1..100`), invalid topping (`0..20`), invalid modifier, missing/invalid `seat_id` for `DINE_IN`, or invalid split/merge selection.
 - `LOCK_TIMEOUT` — `LockService.getScriptLock()` timed out after 15 seconds.
-- `NOT_IMPLEMENTED` — Action scheduled for Phase 2–3.
+- `NOT_IMPLEMENTED` — Action scheduled for Phase 3.
 - `INTERNAL_ERROR` — Unhandled server error or rolled-back database write failure.

@@ -1,15 +1,15 @@
-# Database Schema — Google Sheets (ROMS V1.0, Schema v1.1.0)
+# Database Schema — Google Sheets (ROMS V1.0, Schema v1.2.0)
 
 Initialized and safely migrated by `setupDatabase()` in `backend/src/DbSetup.gs`.
 All timestamps use `Asia/Ho_Chi_Minh` (`yyyy-MM-dd'T'HH:mm:ssXXX`). All monetary fields are integer `VND`.
 
 ## Safe Schema Migrations (`ensureSheetColumns_`)
-Re-running `setupDatabase()` checks existing header rows on every sheet and appends any newly added columns to the right without altering or overwriting existing rows, then updates `Settings.SchemaVersion` to `1.1.0`.
+Re-running `setupDatabase()` checks existing header rows on every sheet and appends any newly added columns to the right without altering or overwriting existing rows, then updates `Settings.SchemaVersion` to `1.2.0` and ensures `Settings.SyncRevision` exists.
 
 ## 1. `Settings`
 | Column | Type | Description |
 | :--- | :--- | :--- |
-| `key` | String (PK) | `SchemaVersion`, `Timezone`, `Currency`, `PrinterEnabled`, `ToppingPriceVnd`, `TableCount`, `SeatsPerTable` |
+| `key` | String (PK) | `SchemaVersion`, `Timezone`, `Currency`, `PrinterEnabled`, `ToppingPriceVnd`, `TableCount`, `SeatsPerTable`, `SyncRevision` |
 | `value` | String | Setting value |
 | `description` | String | Human-readable note |
 
@@ -49,7 +49,7 @@ Re-running `setupDatabase()` checks existing header rows on every sheet and appe
 | `order_id` | String (PK) | Unique ID (`ORD-YYYYMMDD-HHMMSS-XXXX`) |
 | `order_number` | String | Human-readable daily order number (`#YYMMDD-NNN`, e.g. `#261113-001`) |
 | `order_type` | String | `DINE_IN` or `TAKEAWAY` |
-| `status` | String | `Draft`, `Confirmed`, or `Cancelled` |
+| `status` | String | `Draft`, `Confirmed`, `Cancelled`, or `Merged` |
 | `payment_status` | String | `Unpaid` or `Paid` |
 | `table_numbers_json` | String (JSON) | Array of table numbers involved, e.g. `[1, 2]` or `[]` |
 | `subtotal_vnd` | Integer | Sum of `OrderItems.line_total_vnd` |
@@ -61,6 +61,8 @@ Re-running `setupDatabase()` checks existing header rows on every sheet and appe
 | `updated_at` | String | Last update timestamp |
 | `paid_at` | String | Payment timestamp (empty if `Unpaid`) |
 | `created_by` | String | Actor label (e.g. `staff`) |
+| `merged_into_order_id` | String | *(v1.2.0)* Target `order_id` when `status == 'Merged'` |
+| `parent_order_ids_json` | String (JSON) | *(v1.2.0)* Array of source `order_id` values merged into this order |
 
 ## 6. `OrderItems`
 | Column | Type | Description |

@@ -54,9 +54,9 @@ order-system/
 ## Development Phases
 
 - **Phase 0 (Completed):** Project setup, GAS configuration, Sheets initialization script, API contract, documentation, and base tests.
-- **Phase 1 (Completed):** Dynamic menu, search & categories, sold-out state, free modifiers, paid toppings (`15,000 VND`), full cart, `DINE_IN` / `TAKEAWAY` checkout, idempotent `createOrder`, atomic Sheets persistence, and audit logging.
-- **Phase 2 (Next):** 9 tables × 4 seats (36 seats) occupancy board and multi-table/seat order management.
-- **Phase 3 (Planned):** Order editing, merging, splitting, payment (`Unpaid`/`Paid`), synchronization, and live E2E testing.
+- **Phase 1 & 1.5 (Completed):** Dynamic menu, modifiers, toppings, cart, `DINE_IN`/`TAKEAWAY` checkout, POST-only session auth, and rollback hardening.
+- **Phase 2 (Completed):** 3×3 Floor Plan (9 tables × 4 seats), seat-based item assignment, add items to existing orders, move item between seats, merge orders, split orders, active order filters, and multi-device polling sync.
+- **Phase 3 (Next):** Payment settlement (`Unpaid`/`Paid`), order cancellation, order history, and live E2E testing.
 
 ## Running Automated Tests
 
@@ -68,10 +68,15 @@ npm test
 
 ## Documentation
 
-- [PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md) — Complete summary of Phase 1 backend, frontend, and security.
-- [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md) — Architecture, security model, concurrency, and risk mitigations.
-- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) — Google Sheets tables, columns, migrations, and seed data.
-- [API_REFERENCE.md](API_REFERENCE.md) — GAS Web App endpoints, request/response envelopes, and error codes.
-- [DEPLOYMENT.md](DEPLOYMENT.md) — Step-by-step setup for Google Sheets, Apps Script, Drive backups, and GitHub Pages.
-- [TEST_REPORT.md](TEST_REPORT.md) — Automated test coverage and mocked vs. live verification status.
-- [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) — Honest security, concurrency, and operational limitations.
+- [PHASE2_IMPLEMENTATION.md](PHASE2_IMPLEMENTATION.md) — Phase 2 floor, merge/split, and sync architecture.
+- [TABLE_SEAT_MANAGEMENT.md](TABLE_SEAT_MANAGEMENT.md) — 36-seat floor plan & multi-table order rules.
+- [ORDER_MERGE_SPLIT.md](ORDER_MERGE_SPLIT.md) — Order lifecycle, merge, and split guarantees.
+- [MULTI_DEVICE_SYNC.md](MULTI_DEVICE_SYNC.md) — Polling sync & optimistic concurrency.
+- [PHASE2_TEST_REPORT.md](PHASE2_TEST_REPORT.md) — Phase 2 automated test results (33/33 passing).
+- [SECURITY_REVIEW.md](SECURITY_REVIEW.md) — Authentication, session tokens, and XSS protections.
+- [TECHNICAL_SPEC.md](TECHNICAL_SPEC.md) — Architecture, concurrency, and risk mitigations.
+- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) — Google Sheets tables (Schema v1.2.0).
+- [API_REFERENCE.md](API_REFERENCE.md) — GAS Web App endpoints and error codes.
+- [DEPLOYMENT.md](DEPLOYMENT.md) — Setup for Google Sheets, Apps Script, Drive backups, and GitHub Pages.
+- [LIVE_TEST_CHECKLIST.md](LIVE_TEST_CHECKLIST.md) — Manual live browser & GAS verification checklist.
+- [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) — Security, sync, and scope limitations.
