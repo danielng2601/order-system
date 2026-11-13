@@ -1,0 +1,18 @@
+# Local environment & secrets
+.env
+.env.*
+!.env.example
+backend/.clasp.json
+frontend/js/config.js
+
+# Dependencies & build artifacts
+node_modules/
+dist/
+coverage/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
