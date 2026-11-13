@@ -139,10 +139,33 @@
     };
   }
 
+  function detectCrossEnvironmentUrl(url, currentEnv, globalObj) {
+    const raw = String(url || '').trim();
+    if (!raw || isPlaceholderUrl(raw)) return null;
+    const g = globalObj || {};
+    const runtimeCfg = g.ROMS_RUNTIME_CONFIG && typeof g.ROMS_RUNTIME_CONFIG === 'object' ? g.ROMS_RUNTIME_CONFIG : {};
+    const staticCfg = g.ROMS_CONFIG && typeof g.ROMS_CONFIG === 'object' ? g.ROMS_CONFIG : {};
+    const mergedEnvs = Object.assign({}, staticCfg.ENVIRONMENTS || {}, runtimeCfg.ENVIRONMENTS || {});
+
+    for (let i = 0; i < ALLOWED_ENVS.length; i += 1) {
+      const otherEnv = ALLOWED_ENVS[i];
+      if (otherEnv === currentEnv) continue;
+      const entry = mergedEnvs[otherEnv];
+      if (entry && entry.GAS_WEB_APP_URL) {
+        const otherUrl = String(entry.GAS_WEB_APP_URL).trim();
+        if (otherUrl && !isPlaceholderUrl(otherUrl) && otherUrl === raw) {
+          return otherEnv;
+        }
+      }
+    }
+    return null;
+  }
+
   return {
     ALLOWED_ENVS: ALLOWED_ENVS,
     isPlaceholderUrl: isPlaceholderUrl,
     isValidUrlForEnv: isValidUrlForEnv,
+    detectCrossEnvironmentUrl: detectCrossEnvironmentUrl,
     resolveEnvironment: resolveEnvironment,
     resolveConfig: resolveConfig,
   };

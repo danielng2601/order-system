@@ -2263,18 +2263,36 @@
     });
   }
 
-  function init() {
+  function updateEnvironmentIndicator() {
     const envState = global.ROMS_ENV ? global.ROMS_ENV.resolveConfig(global) : null;
+    const isOverride = typeof api.isManualOverride === 'function' && api.isManualOverride();
     const envBadge = el('env-badge');
     if (envBadge && envState) {
-      envBadge.textContent = envState.env;
+      envBadge.textContent = envState.env + (isOverride ? ' (URL tùy chỉnh)' : '');
       envBadge.className =
-        'status-badge ' + (envState.env === 'PRODUCTION' ? 'status-warn' : 'status-neutral');
+        'status-badge ' + (envState.env === 'PRODUCTION' || isOverride ? 'status-warn' : 'status-neutral');
       envBadge.hidden = false;
-      if (!envState.valid && el('settings-error')) {
-        el('settings-error').textContent = envState.errorMessage;
-        el('settings-error').hidden = false;
+    }
+    const overrideWarn = el('url-override-warning');
+    if (overrideWarn) {
+      if (isOverride) {
+        overrideWarn.textContent =
+          'Cảnh báo: Đang dùng GAS Web App URL nhập thủ công (sessionStorage) thay cho cấu hình mặc định của môi trường ' +
+          (envState ? envState.env : '') +
+          '.';
+        overrideWarn.hidden = false;
+      } else {
+        overrideWarn.hidden = true;
       }
+    }
+    return envState;
+  }
+
+  function init() {
+    const envState = updateEnvironmentIndicator();
+    if (envState && !envState.valid && el('settings-error')) {
+      el('settings-error').textContent = envState.errorMessage;
+      el('settings-error').hidden = false;
     }
 
     el('gas-url-input').value = api.getApiUrl();

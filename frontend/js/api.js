@@ -61,10 +61,62 @@
     return (g.ROMS_CONFIG && g.ROMS_CONFIG.GAS_WEB_APP_URL) || '';
   }
 
-  function setApiUrl(url) {
+  function isManualOverride() {
+    const envState = resolveEnvState();
+    const storage = getStorage();
+    const stored = storage ? storage.getItem(getStorageKey(STORAGE_KEYS.API_URL)) : '';
+    if (!stored) return false;
+    if (!envState || !envState.gasWebAppUrl) return true;
+    return stored !== envState.gasWebAppUrl;
+  }
+
+  function clearApiUrlOverride() {
     const storage = getStorage();
     if (storage) {
-      storage.setItem(getStorageKey(STORAGE_KEYS.API_URL), String(url || '').trim());
+      storage.removeItem(getStorageKey(STORAGE_KEYS.API_URL));
+    }
+    clearSession();
+  }
+
+  function setApiUrl(url) {
+    const g = getGlobal();
+    const envState = resolveEnvState();
+    if (envState && !envState.valid) {
+      throw makeApiError(envState.errorMessage, envState.errorCode || 'INVALID_ENV');
+    }
+    const trimmed = String(url || '').trim();
+    const prevUrl = getApiUrl();
+
+    if (!trimmed) {
+      clearApiUrlOverride();
+      return;
+    }
+
+    if (envState && g.ROMS_ENV && typeof g.ROMS_ENV.detectCrossEnvironmentUrl === 'function') {
+      const conflictEnv = g.ROMS_ENV.detectCrossEnvironmentUrl(trimmed, envState.env, g);
+      if (conflictEnv) {
+        throw makeApiError(
+          'Không thể dùng URL của môi trường ' + conflictEnv + ' trong môi trường ' + envState.env + '.',
+          'CROSS_ENV_OVERRIDE'
+        );
+      }
+    }
+
+    if (envState && g.ROMS_ENV && typeof g.ROMS_ENV.isValidUrlForEnv === 'function') {
+      if (!g.ROMS_ENV.isValidUrlForEnv(trimmed, envState.env)) {
+        throw makeApiError(
+          'URL của Google Apps Script Web App không hợp lệ cho môi trường ' + envState.env + '.',
+          'UNCONFIGURED'
+        );
+      }
+    }
+
+    const storage = getStorage();
+    if (storage) {
+      storage.setItem(getStorageKey(STORAGE_KEYS.API_URL), trimmed);
+    }
+    if (prevUrl && prevUrl !== trimmed) {
+      clearSession();
     }
   }
 
@@ -117,6 +169,15 @@
     if (isPlaceholder) {
       const envLabel = envState ? ' (' + envState.env + ')' : '';
       throw makeApiError('Chưa cấu hình URL của Google Apps Script Web App' + envLabel + '.', 'UNCONFIGURED');
+    }
+    if (envState && g.ROMS_ENV && typeof g.ROMS_ENV.detectCrossEnvironmentUrl === 'function') {
+      const conflictEnv = g.ROMS_ENV.detectCrossEnvironmentUrl(baseUrl, envState.env, g);
+      if (conflictEnv) {
+        throw makeApiError(
+          'URL đang trỏ tới môi trường ' + conflictEnv + ' trong khi ứng dụng đang chạy ở ' + envState.env + '.',
+          'CROSS_ENV_OVERRIDE'
+        );
+      }
     }
     if (envState && g.ROMS_ENV && typeof g.ROMS_ENV.isValidUrlForEnv === 'function') {
       if (!g.ROMS_ENV.isValidUrlForEnv(baseUrl, envState.env)) {
@@ -212,6 +273,8 @@
   return {
     getApiUrl: getApiUrl,
     setApiUrl: setApiUrl,
+    isManualOverride: isManualOverride,
+    clearApiUrlOverride: clearApiUrlOverride,
     getSessionToken: getSessionToken,
     setSession: setSession,
     clearSession: clearSession,
