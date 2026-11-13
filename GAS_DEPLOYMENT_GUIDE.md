@@ -2,9 +2,14 @@
 
 > **Note:** All steps below that push to GAS or create deployments `[REQUIRES OWNER]` authorization.
 
-## 1. Files to Deploy (`backend/src/`)
-All 11 files in `backend/src/` must be present in the GAS project:
-1. `appsscript.json` (`timeZone: "Asia/Ho_Chi_Minh"`, `runtimeVersion: "V8"`, `webapp.executeAs: "USER_DEPLOYING"`, `webapp.access: "ANYONE_ANONYMOUS"`)
+## 1. Deployment Layout & Files (`backend/src/`)
+- **Canonical Manifest:** `backend/src/appsscript.json` (no root `appsscript.json` exists).
+  - `timeZone`: `"Asia/Ho_Chi_Minh"`, `runtimeVersion`: `"V8"`, `webapp.executeAs`: `"USER_DEPLOYING"`, `webapp.access`: `"ANYONE_ANONYMOUS"`.
+  - `oauthScopes` is omitted so GAS infers scopes automatically (`SpreadsheetApp`, `DriveApp`, `PropertiesService`, `CacheService`, `LockService`, `Utilities`, `ContentService`).
+- **Source Root:** `backend/src/` (configured via `"rootDir": "src"` in `backend/.clasp.json.example`). All `clasp` commands **must** be executed from `backend/`.
+
+All 10 `.gs` files + `appsscript.json` (11 files total) in `backend/src/` must be present in the GAS project:
+1. `appsscript.json`
 2. `Config.gs` (`PRINTER_ENABLED: false`, `SCHEMA_VERSION: "1.3.0"`)
 3. `Validation.gs`
 4. `DbSetup.gs`
@@ -19,7 +24,7 @@ All 11 files in `backend/src/` must be present in the GAS project:
 ## 2. Deploying via `clasp` or Apps Script Editor `[REQUIRES OWNER]`
 1. Create a standalone GAS project named `ROMS_Backend_Staging` at `https://script.google.com`.
 2. Copy `backend/.clasp.json.example` to `backend/.clasp.json` (gitignored) and set `"scriptId": "<STAGING_SCRIPT_ID>"`.
-3. Push source files from `backend/`:
+3. From `backend/`, push source files:
    ```bash
    clasp push
    ```

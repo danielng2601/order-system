@@ -1,18 +1,20 @@
 # Backup & Rollback Procedures — ROMS V1.0
 
-## 1. Automated & Manual Google Drive Backups
+## 1. Automated & Manual Google Drive Backups (Implemented, Mock-Tested Only)
 `backupDatabaseToDrive()` in `backend/src/DbSetup.gs`:
 - Locates (or creates) the `ROMS_Backups` folder in Google Drive.
-- Copies the active `SPREADSHEET_ID` spreadsheet to `<SpreadsheetName>_backup_yyyyMMdd-HHmmss` (`Asia/Ho_Chi_Minh`).
-- Returns `{ ok: true, fileId, fileName }`.
+- Copies the **entire** active `SPREADSHEET_ID` spreadsheet (all 9 sheets, values, formulas, and headers) via `DriveApp.getFileById(ss.getId()).makeCopy(...)`.
+- Names the backup `<SpreadsheetName>[_<ENV>]_backup_yyyyMMdd-HHmmss` (`Asia/Ho_Chi_Minh`) so staging and production backups are distinguishable.
+- Returns `{ ok: true, environment, fileId, fileName }` on success, or `{ ok: false, environment, error }` if `DriveApp` fails.
+- **Concurrency Note:** `backupDatabaseToDrive()` does **not** acquire `LockService.getScriptLock()`, so scheduled backups should run off-hours (e.g., 1:00 AM – 2:00 AM `Asia/Ho_Chi_Minh`).
 
 ### Staging Verification `[REQUIRES OWNER]`
 1. Run `backupDatabaseToDrive()` manually in the Staging GAS editor.
 2. Confirm `ROMS_Backups/ROMS_Database_Staging_backup_<timestamp>` is created in Google Drive.
 3. Configure a daily time-driven trigger (1:00 AM – 2:00 AM `Asia/Ho_Chi_Minh`) before Production launch.
 
-## 2. Database Rollback Procedure
-If a migration or deployment corrupts data:
+## 2. Database Rollback Procedure (Documented Manual Procedure Only — Not Implemented in Code)
+> **Note:** Automated restore is **not** implemented in code and has **not** been executed against a real spreadsheet. The steps below are manual operator procedures:
 1. Temporarily invalidate active sessions or pause staff usage (rotate `STAFF_PASSCODE` if needed).
 2. Locate the latest clean snapshot in `ROMS_Backups/`.
 3. Either:

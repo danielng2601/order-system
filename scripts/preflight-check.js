@@ -13,6 +13,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { execFileSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -188,10 +189,40 @@ function scanForSecrets() {
   ok('Secret & production-ID scan passed (no real tokens or deployment IDs found)');
 }
 
+function checkJsSyntaxIndividually() {
+  const jsDirs = ['frontend/js', 'scripts', 'tests'];
+  let checked = 0;
+  for (const dir of jsDirs) {
+    const fullDir = path.join(ROOT, dir);
+    if (!fs.existsSync(fullDir)) continue;
+    const files = fs.readdirSync(fullDir).filter((f) => f.endsWith('.js')).sort();
+    for (const file of files) {
+      const target = path.join(fullDir, file);
+      try {
+        execFileSync(process.execPath, ['--check', target], { stdio: 'pipe' });
+        checked += 1;
+      } catch (err) {
+        fail(`JS syntax error in ${path.join(dir, file)}: ${(err.stderr || err.message || '').toString().trim()}`);
+      }
+    }
+  }
+  ok(`Individual JS syntax check passed for ${checked} files`);
+}
+
+function checkNoConflictingRootManifest() {
+  if (fs.existsSync(path.join(ROOT, 'appsscript.json'))) {
+    fail('Conflicting root appsscript.json detected; only backend/src/appsscript.json should exist');
+    return;
+  }
+  ok('No conflicting root appsscript.json (canonical manifest: backend/src/appsscript.json)');
+}
+
 checkGitignore();
 checkGitHubPagesWorkflow();
 checkFrontendAssetsAndEnv();
 checkGasBackend();
+checkNoConflictingRootManifest();
+checkJsSyntaxIndividually();
 scanForSecrets();
 
 if (process.exitCode && process.exitCode !== 0) {
