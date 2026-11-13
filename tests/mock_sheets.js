@@ -63,6 +63,10 @@ class MockSheet {
     return this._rows.length;
   }
 
+  getName() {
+    return this.name;
+  }
+
   getLastColumn() {
     return this._rows.length > 0 ? this._rows[0].length : 0;
   }
@@ -127,6 +131,9 @@ function createGasMockEnv(options = {}) {
     options.properties || {}
   );
 
+  const cacheStore = new Map();
+  let fakeNowMs = null;
+
   const env = {
     console,
     Intl,
@@ -140,6 +147,10 @@ function createGasMockEnv(options = {}) {
     Object,
     Error,
     _ss: ss,
+    _cache: cacheStore,
+    _setFakeNowMs: (ms) => {
+      fakeNowMs = ms;
+    },
     _setLockBusy: (busy) => {
       lockBusy = Boolean(busy);
     },
@@ -147,6 +158,27 @@ function createGasMockEnv(options = {}) {
       openById: () => ss,
       getActiveSpreadsheet: () => ss,
       flush: () => {},
+    },
+    CacheService: {
+      getScriptCache: () => ({
+        put: (k, v, ttlSec) => {
+          const now = fakeNowMs !== null ? fakeNowMs : Date.now();
+          cacheStore.set(k, { value: String(v), expiresAt: now + (ttlSec || 600) * 1000 });
+        },
+        get: (k) => {
+          const entry = cacheStore.get(k);
+          if (!entry) return null;
+          const now = fakeNowMs !== null ? fakeNowMs : Date.now();
+          if (now > entry.expiresAt) {
+            cacheStore.delete(k);
+            return null;
+          }
+          return entry.value;
+        },
+        remove: (k) => {
+          cacheStore.delete(k);
+        },
+      }),
     },
     PropertiesService: {
       getScriptProperties: () => ({

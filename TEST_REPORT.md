@@ -1,18 +1,19 @@
-# Automated Test Report — ROMS V1.0 (Phase 0 + Phase 1)
+# Automated Test Report — ROMS V1.0 (Phase 0 + Phase 1 + Phase 1.5)
 
 **Command:** `npm test` (`node --test tests/*.test.js`)  
-**Result:** 19 passed, 0 failed, 0 skipped
+**Result:** 25 passed, 0 failed, 0 skipped
 
 ## Important Distinction: Mocked vs. Live Integration
-- All 19 tests run offline in Node.js (`vm` + `tests/mock_sheets.js`).
-- **Mocked:** Google Sheets (`SpreadsheetApp`), `LockService`, `PropertiesService`, and `Utilities` are simulated in memory.
-- **Not yet executed:** Live end-to-end HTTP calls from GitHub Pages to a deployed Google Apps Script Web App against a real Google Sheet (requires owner-provisioned `SPREADSHEET_ID`, `STAFF_PASSCODE`, and GAS deployment URL).
+- All 25 tests run offline in Node.js (`vm` + `tests/mock_sheets.js`).
+- **Mocked:** Google Sheets (`SpreadsheetApp`), `CacheService`, `LockService`, `PropertiesService`, and `Utilities` are simulated in memory.
+- **Not yet executed:** Live end-to-end HTTP calls from GitHub Pages to a deployed Google Apps Script Web App against a real Google Sheet (see `LIVE_TEST_CHECKLIST.md`).
 
 ## Coverage Matrix
 
-| Suite | Scenarios Covered | Status |
-| :--- | :--- | :--- |
-| `tests/phase0.test.js` | Phase 0 required files, `appsscript.json` (`Asia/Ho_Chi_Minh`, `V8`), 9×4 seats, 7 menu prices, `PrinterEnabled=false`, `health` & fail-closed `bootstrap` | Pass (5/5) |
-| `tests/validation.test.js` | Seat ID validation (`T1-S1`..`T9-S4`), VND line calculation with toppings, `DINE_IN` vs `TAKEAWAY` rules, client price tampering, `generateOrderId`, `constantTimeEqual` | Pass (5/5) |
-| `tests/phase1_backend.test.js` | Safe schema migration, `menu`/`modifiers` auth & prices, unknown/sold-out/zero/negative/large qty/invalid modifier/invalid seat rejection, multi-item `DINE_IN` persistence, `TAKEAWAY` persistence, idempotency replay, `LockService` contention, partial write rollback, `AuditLog` creation | Pass (6/6) |
-| `tests/phase1_frontend.test.js` | `formatVnd`, `escapeHtml` XSS escaping, cart add/edit/duplicate/totals, cart preservation on failure, cart clearing on success | Pass (3/3) |
+| Suite | Type | Scenarios Covered | Status |
+| :--- | :--- | :--- | :--- |
+| `tests/phase0.test.js` | Unit + Mocked GAS | Phase 0 files, `appsscript.json`, 9×4 seats, 7 menu prices, `PrinterEnabled=false`, `health`, `METHOD_NOT_ALLOWED` on `GET bootstrap` | Pass (5/5) |
+| `tests/validation.test.js` | Unit | Seat ID validation, VND line calculation, `DINE_IN` vs `TAKEAWAY`, client price tampering, `generateOrderId`, `constantTimeEqual` | Pass (5/5) |
+| `tests/phase1_backend.test.js` | Integration (Mocked Sheets) | Schema migration, `menu`/`modifiers` auth & prices, validation rejections, `DINE_IN`/`TAKEAWAY` persistence, idempotency, `LockService` contention, `OrderItems` rollback, `AuditLog` | Pass (6/6) |
+| `tests/phase1_frontend.test.js` | Unit | `formatVnd`, `escapeHtml` XSS escaping, cart add/edit/duplicate/totals, preserve-on-failure, clear-on-success | Pass (3/3) |
+| `tests/phase1_5_hardening.test.js` | Security & Hardening (Mocked GAS/Fetch) | `login` `session_token` & expiry, `GET` credential rejection, unset `STAFF_PASSCODE` fail-closed, malformed/non-object JSON, `AuditLog`/`IdempotencyKeys` rollback, `verifyDatabaseIntegrity()`, frontend offline/non-JSON/`SESSION_EXPIRED` | Pass (6/6) |

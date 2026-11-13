@@ -154,8 +154,15 @@ test('Code.gs doGet health endpoint returns Phase 0 status and fail-closed auth 
   assert.equal(healthJson.data.timezone, 'Asia/Ho_Chi_Minh');
   assert.equal(healthJson.data.printerEnabled, false);
 
-  const unauthOut = ctx.doGet({ parameter: { action: 'bootstrap', passcode: 'guess' } });
-  const unauthJson = JSON.parse(unauthOut.getContent());
-  assert.equal(unauthJson.ok, false);
-  assert.equal(unauthJson.error.code, 'UNAUTHORIZED');
+  const getBootstrapOut = ctx.doGet({ parameter: { action: 'bootstrap' } });
+  const getBootstrapJson = JSON.parse(getBootstrapOut.getContent());
+  assert.equal(getBootstrapJson.ok, false);
+  assert.equal(getBootstrapJson.error.code, 'METHOD_NOT_ALLOWED');
+
+  const unauthPostOut = ctx.doPost({
+    postData: { contents: JSON.stringify({ action: 'bootstrap', passcode: 'guess' }) },
+  });
+  const unauthPostJson = JSON.parse(unauthPostOut.getContent());
+  assert.equal(unauthPostJson.ok, false);
+  assert.equal(unauthPostJson.error.code, 'UNAUTHORIZED');
 });

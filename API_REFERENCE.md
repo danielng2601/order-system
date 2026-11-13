@@ -3,25 +3,28 @@
 Base URL: `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec`
 
 ## Transport & CORS Convention
-- **GET requests:** Query string `?action=<action>&passcode=<STAFF_PASSCODE>`
-- **POST requests:** `Content-Type: text/plain;charset=utf-8` with JSON-stringified body `{ "action": "<action>", "passcode": "<staff_passcode>", ... }`. Avoids CORS `OPTIONS` preflight requests.
+- **GET requests:** Public `?action=health` only. Credentials are **never** accepted in URL query strings.
+- **POST requests:** `Content-Type: text/plain;charset=utf-8` with JSON-stringified body `{ "action": "<action>", "session_token": "<token>", ... }`. Avoids CORS `OPTIONS` preflight requests.
 
-## Implemented Endpoints (Phase 0 + Phase 1)
+## Implemented Endpoints (Phase 0 + Phase 1.5)
 
 ### `GET ?action=health`
 Public liveness check.
 
-### `GET ?action=bootstrap&passcode=<STAFF_PASSCODE>`
-Returns `settings`, `menuItems` (including `is_active: false` for sold-out display), `modifiers`, `tablesSeats`, `toppingUnitPriceVnd`, and `printerEnabled`.
+### `POST` `{ "action": "login", "passcode": "<STAFF_PASSCODE>" }`
+Validates `STAFF_PASSCODE` and returns `{ session_token, expires_at, expires_at_ms, ttl_seconds }` (6-hour TTL in `CacheService`).
 
-### `GET ?action=menu&passcode=<STAFF_PASSCODE>`
+### `POST` `{ "action": "bootstrap", "session_token": "<token>" }`
+Returns allowlisted `settings`, `menuItems` (including `is_active: false`), `modifiers`, `tablesSeats`, `toppingUnitPriceVnd`, and `printerEnabled`.
+
+### `POST` `{ "action": "menu", "session_token": "<token>" }`
 Returns `{ menuItems, toppingUnitPriceVnd }`.
 
-### `GET ?action=modifiers&passcode=<STAFF_PASSCODE>`
+### `POST` `{ "action": "modifiers", "session_token": "<token>" }`
 Returns `{ modifiers }` (active modifiers with `group_name` and `price_delta_vnd`).
 
-### `POST` `{ "action": "ping", "passcode": "<STAFF_PASSCODE>" }`
-Verifies cross-domain `POST` connectivity and passcode authentication.
+### `POST` `{ "action": "ping", "session_token": "<token>" }`
+Verifies cross-domain `POST` connectivity and session authentication.
 
 ### `POST` `{ "action": "createOrder", ... }`
 Creates a new `DINE_IN` or `TAKEAWAY` order inside `LockService.getScriptLock()`.

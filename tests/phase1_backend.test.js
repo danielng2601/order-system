@@ -56,14 +56,14 @@ test('Database setup seeds all 8 sheets, 7 menu items, 6 modifiers, 36 seats, an
   assert.equal(ordersSheet._rows[0].includes('order_number'), true);
 });
 
-test('Menu & Modifiers endpoints require valid passcode and return all menu prices', () => {
+test('Menu & Modifiers POST endpoints require valid auth and return all menu prices', () => {
   const ctx = bootBackend();
 
-  const unauth = get(ctx, { action: 'menu', passcode: 'wrong' });
+  const unauth = post(ctx, { action: 'menu', passcode: 'wrong' });
   assert.equal(unauth.ok, false);
   assert.equal(unauth.error.code, 'UNAUTHORIZED');
 
-  const menuRes = get(ctx, { action: 'menu', passcode: 'test-pass-999' });
+  const menuRes = post(ctx, { action: 'menu', passcode: 'test-pass-999' });
   assert.equal(menuRes.ok, true);
   const byId = Object.fromEntries(menuRes.data.menuItems.map((m) => [m.item_id, m.price_vnd]));
   assert.deepEqual(byId, {
@@ -76,7 +76,7 @@ test('Menu & Modifiers endpoints require valid passcode and return all menu pric
     QUAY: 5000,
   });
 
-  const modRes = get(ctx, { action: 'modifiers', passcode: 'test-pass-999' });
+  const modRes = post(ctx, { action: 'modifiers', passcode: 'test-pass-999' });
   assert.equal(modRes.ok, true);
   assert.equal(modRes.data.modifiers.length, 6);
 });
