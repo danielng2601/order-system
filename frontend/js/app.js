@@ -126,13 +126,22 @@
       modalSeatSel.innerHTML = '';
     }
 
+    const inactiveMap = {};
+    if (Array.isArray(state.tablesSeats)) {
+      state.tablesSeats.forEach(function (s) {
+        if (!s.is_active) inactiveMap[s.seat_id] = true;
+      });
+    }
+
     for (let t = 1; t <= 9; t += 1) {
       for (let s = 1; s <= 4; s += 1) {
         const seatId = 'T' + t + '-S' + s;
+        const isInactive = Boolean(inactiveMap[seatId]);
         if (modalSeatSel) {
           const opt = document.createElement('option');
           opt.value = seatId;
-          opt.textContent = 'Bàn ' + t + ' - Ghế ' + s + ' (' + seatId + ')';
+          opt.textContent = 'Bàn ' + t + ' - Ghế ' + s + ' (' + seatId + ')' + (isInactive ? ' [Tạm khóa]' : '');
+          opt.disabled = isInactive;
           modalSeatSel.appendChild(opt);
         }
         if (filterSeatSel) {
@@ -550,6 +559,9 @@
         return;
       }
       state.currentDetail = res.data;
+      if (syncManager && res.data.syncRevision) {
+        syncManager.setRevision(res.data.syncRevision);
+      }
       renderOrderDetailModal();
       el('order-detail-modal').hidden = false;
     } catch (err) {
@@ -910,7 +922,37 @@
       })
       .join('');
 
+    let seatTableBreakdownHtml = '';
+    if (isDineIn) {
+      const seatSubs = {};
+      const tableSubs = {};
+      cartState.items.forEach(function (line) {
+        if (!line.seat_id) return;
+        seatSubs[line.seat_id] = (seatSubs[line.seat_id] || 0) + line.line_total_vnd;
+        const m = /^T([1-9])-S([1-4])$/.exec(line.seat_id);
+        if (m) {
+          const tKey = 'Bàn ' + m[1];
+          tableSubs[tKey] = (tableSubs[tKey] || 0) + line.line_total_vnd;
+        }
+      });
+      const seatKeys = Object.keys(seatSubs).sort();
+      const tableKeys = Object.keys(tableSubs).sort();
+      if (seatKeys.length > 0) {
+        seatTableBreakdownHtml +=
+          '<div class="total-row muted-small"><span>Theo ghế: ' +
+          seatKeys.map(function (k) { return fmt.escapeHtml(k + ': ' + fmt.formatVnd(seatSubs[k])); }).join(' · ') +
+          '</span></div>';
+      }
+      if (tableKeys.length > 1) {
+        seatTableBreakdownHtml +=
+          '<div class="total-row muted-small"><span>Theo bàn: ' +
+          tableKeys.map(function (k) { return fmt.escapeHtml(k + ': ' + fmt.formatVnd(tableSubs[k])); }).join(' · ') +
+          '</span></div>';
+      }
+    }
+
     el('checkout-totals').innerHTML =
+      seatTableBreakdownHtml +
       '<div class="total-row"><span>Tạm tính món</span><span>' +
       fmt.escapeHtml(fmt.formatVnd(summary.baseSubtotalVnd)) +
       '</span></div>' +
@@ -1001,6 +1043,7 @@
         syncManager.start();
       }
 
+      initSeatSelectors();
       renderCategoryTabs();
       renderMenuGrid();
       renderCart();
@@ -1269,9 +1312,12 @@
         });
         if (!res || !res.ok) {
           global.alert((res && res.error && res.error.message) || 'Không thể chuyển ghế.');
+        } else if (syncManager && res.data && res.data.syncRevision) {
+          syncManager.setRevision(res.data.syncRevision);
         }
         await openOrderDetail(order.order_id);
         if (state.activeTab === 'floor') loadFloorState();
+        if (state.activeTab === 'orders') loadActiveOrders();
       } catch (err) {
         global.alert(err.message || 'Lỗi chuyển ghế.');
       }
