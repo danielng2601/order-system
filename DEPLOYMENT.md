@@ -10,7 +10,7 @@
 ## 2. Google Apps Script Backend Setup
 
 1. Create a standalone Apps Script project at [script.google.com](https://script.google.com) (or via `clasp create --type standalone`).
-2. Copy all files from `backend/src/` (`appsscript.json`, `Config.gs`, `Validation.gs`, `DbSetup.gs`, `PrinterService.gs`, `Code.gs`) into the Apps Script project (or copy `backend/.clasp.json.example` to `backend/.clasp.json`, fill in `scriptId`, and run `clasp push`).
+2. Copy all files from `backend/src/` (`appsscript.json`, `Config.gs`, `Validation.gs`, `DbSetup.gs`, `PrinterService.gs`, `Repository.gs`, `OrderService.gs`, `Code.gs`) into the Apps Script project (or copy `backend/.clasp.json.example` to `backend/.clasp.json`, fill in `scriptId`, and run `clasp push`).
 3. In Apps Script **Project Settings → Script Properties**, add:
    - `SPREADSHEET_ID`: `<your Google Sheet ID>`
    - `STAFF_PASSCODE`: `<strong passcode for restaurant staff>`

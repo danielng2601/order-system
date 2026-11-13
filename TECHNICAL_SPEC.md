@@ -44,8 +44,9 @@ Because GitHub Pages serves static assets publicly, **no secrets, API keys, serv
 - **Problem:** Multiple staff tablets may create, edit, merge, or pay orders simultaneously, risking race conditions or lost updates in Google Sheets.
 - **Mitigation:**
   1. **Script Lock:** Every mutating `doPost` request acquires `LockService.getScriptLock().tryLock(15000)` and calls `SpreadsheetApp.flush()` before releasing the lock.
-  2. **Optimistic Concurrency (`version`):** Every `Orders` row carries an integer `version` incremented on each mutation. Phase 1–3 updates must supply `expected_version`, returning `VERSION_CONFLICT` if another device modified the order first.
-  3. **Idempotency (`idempotency_key`):** Mutating requests include a client-generated UUID `idempotency_key` checked against `IdempotencyKeys` inside the script lock to prevent duplicate orders from double-taps or network retries.
+  2. **Atomic Persistence & Rollback (`Repository.gs`):** `persistOrderAtomically_()` verifies `order_id` uniqueness, writes `Orders` + batch `OrderItems` + `IdempotencyKeys` + `AuditLog`, rolls back the `Orders` row if `OrderItems` write fails, and verifies written IDs after `SpreadsheetApp.flush()`.
+  3. **Optimistic Concurrency (`version`):** Every `Orders` row carries an integer `version` incremented on each mutation. Phase 2–3 updates must supply `expected_version`, returning `VERSION_CONFLICT` if another device modified the order first.
+  4. **Idempotency (`idempotency_key`):** Mutating requests include a client-generated UUID `idempotency_key` checked against `IdempotencyKeys` inside the script lock to prevent duplicate orders from double-taps or network retries.
 
 ### Risk 3: Google Sheets Latency & Quotas
 - **Problem:** Cell-by-cell reads/writes are slow and risk hitting GAS 6-minute/quota limits.
