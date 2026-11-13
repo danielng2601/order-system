@@ -3,50 +3,218 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ROMS V1.0 — Restaurant Order Management System</title>
+  <title>ROMS V1.0 — Đặt món</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <header class="app-header">
-    <div>
+    <div class="header-brand">
       <h1>ROMS V1.0</h1>
-      <p class="subtitle">Phase 0 Infrastructure &amp; Connectivity Shell (Asia/Ho_Chi_Minh · VND)</p>
+      <span id="conn-badge" class="status-badge status-neutral">Chưa kết nối</span>
     </div>
-    <span id="health-badge" class="status-badge">Phase 0 Ready</span>
+    <div class="header-actions">
+      <button id="refresh-menu-btn" type="button" class="btn btn-sm" hidden>Tải lại thực đơn</button>
+      <button id="toggle-settings-btn" type="button" class="btn btn-sm">Cài đặt</button>
+    </div>
   </header>
 
-  <main class="container">
-    <section class="card">
-      <h2>Backend Connection (Google Apps Script)</h2>
-      <div class="grid-2">
-        <div class="field">
-          <label for="gas-url-input">GAS Web App URL</label>
-          <input id="gas-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
-        </div>
-        <div class="field">
-          <label for="staff-passcode-input">Staff Passcode (session only)</label>
-          <input id="staff-passcode-input" type="password" placeholder="Enter staff passcode" autocomplete="off" />
-        </div>
+  <section id="settings-panel" class="settings-panel">
+    <div class="settings-inner">
+      <div class="field">
+        <label for="gas-url-input">GAS Web App URL</label>
+        <input id="gas-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
       </div>
-      <div class="actions">
-        <button id="save-config-btn" type="button" class="btn">Save Session Config</button>
-        <button id="check-health-btn" type="button" class="btn btn-primary">Check Backend Health</button>
+      <div class="field">
+        <label for="staff-passcode-input">Mã nhân viên (Passcode)</label>
+        <input id="staff-passcode-input" type="password" placeholder="Nhập mã nhân viên" autocomplete="off" />
       </div>
-      <pre id="health-output">Click "Check Backend Health" after deploying GAS Web App.</pre>
+      <div class="settings-btns">
+        <button id="connect-btn" type="button" class="btn btn-primary">Kết nối &amp; Tải thực đơn</button>
+      </div>
+    </div>
+    <p id="settings-error" class="inline-error" hidden></p>
+  </section>
+
+  <section class="order-context-bar">
+    <div class="order-type-group" role="group" aria-label="Loại đơn hàng">
+      <button id="type-dinein-btn" type="button" class="seg-btn active" data-type="DINE_IN">Tại bàn</button>
+      <button id="type-takeaway-btn" type="button" class="seg-btn" data-type="TAKEAWAY">Mang về</button>
+    </div>
+
+    <div id="seat-picker-bar" class="seat-picker-bar">
+      <label for="active-table-select">Bàn:</label>
+      <select id="active-table-select" class="select-touch" aria-label="Chọn bàn"></select>
+      <label for="active-seat-select">Ghế:</label>
+      <select id="active-seat-select" class="select-touch" aria-label="Chọn ghế"></select>
+      <span id="active-seat-badge" class="seat-pill">T1-S1</span>
+    </div>
+
+    <div id="takeaway-hint" class="takeaway-hint" hidden>
+      Đơn mang về — không cần chọn bàn/ghế
+    </div>
+  </section>
+
+  <main class="pos-layout">
+    <section class="menu-pane" aria-label="Thực đơn">
+      <div class="menu-toolbar">
+        <div class="search-box">
+          <input id="menu-search-input" type="search" placeholder="Tìm món (VD: Mỳ, Sủi cảo, Quẩy)..." aria-label="Tìm món" />
+        </div>
+        <div id="category-tabs" class="category-tabs" role="tablist"></div>
+      </div>
+
+      <div id="menu-empty-state" class="empty-state">
+        <p>Chưa có dữ liệu thực đơn. Vui lòng nhập mã nhân viên và nhấn <strong>Kết nối &amp; Tải thực đơn</strong>.</p>
+      </div>
+      <div id="menu-grid" class="menu-grid" hidden></div>
     </section>
 
-    <section class="card">
-      <h2>Implementation Roadmap</h2>
-      <ul class="clean-list">
-        <li><strong>Phase 0 (Current):</strong> Project structure, GAS setup, Sheets schema, API contract, docs &amp; tests.</li>
-        <li><strong>Phase 1:</strong> Menu, modifiers, paid toppings, cart &amp; checkout.</li>
-        <li><strong>Phase 2:</strong> 9 tables × 4 seats (36 seats) &amp; multi-table/seat assignment.</li>
-        <li><strong>Phase 3:</strong> Order management (edit, merge, split), payment, sync &amp; E2E testing.</li>
-      </ul>
-    </section>
+    <aside id="cart-pane" class="cart-pane" aria-label="Giỏ hàng">
+      <div class="cart-header">
+        <div>
+          <h2>Giỏ hàng <span id="cart-count-badge" class="count-pill">0</span></h2>
+          <span id="cart-type-label" class="muted-small">Tại bàn</span>
+        </div>
+        <button id="clear-cart-btn" type="button" class="btn btn-sm btn-danger-ghost" disabled>Xóa hết</button>
+      </div>
+
+      <div id="cart-empty" class="cart-empty">
+        Chưa có món nào trong giỏ. Chọn món từ thực đơn để bắt đầu.
+      </div>
+
+      <div id="cart-items-list" class="cart-items-list"></div>
+
+      <div class="cart-footer">
+        <div class="field compact">
+          <label for="order-notes-input">Ghi chú đơn hàng</label>
+          <input id="order-notes-input" type="text" maxlength="500" placeholder="VD: Lấy đũa thìa, giao nhanh..." />
+        </div>
+
+        <div class="totals-box">
+          <div class="total-row">
+            <span>Tạm tính món</span>
+            <span id="subtotal-base-val">0 VND</span>
+          </div>
+          <div class="total-row">
+            <span>Topping thêm</span>
+            <span id="subtotal-topping-val">0 VND</span>
+          </div>
+          <div class="total-row grand">
+            <span>Tổng cộng</span>
+            <span id="grand-total-val">0 VND</span>
+          </div>
+        </div>
+
+        <button id="review-order-btn" type="button" class="btn btn-primary btn-block" disabled>
+          Xem lại &amp; Đặt món
+        </button>
+      </div>
+    </aside>
   </main>
 
+  <!-- Mobile sticky cart bar -->
+  <div id="mobile-cart-bar" class="mobile-cart-bar" hidden>
+    <div>
+      <strong id="mobile-cart-count">0 món</strong>
+      <span id="mobile-cart-total">0 VND</span>
+    </div>
+    <button id="mobile-open-cart-btn" type="button" class="btn btn-primary">Xem giỏ hàng</button>
+  </div>
+
+  <!-- Item Customize / Edit Modal -->
+  <div id="item-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="item-modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h3 id="item-modal-title">Tùy chỉnh món</h3>
+          <p id="item-modal-price" class="muted-small"></p>
+        </div>
+        <button id="item-modal-close" type="button" class="btn btn-sm" aria-label="Đóng">Đóng</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-row-split">
+          <div class="field">
+            <label>Số lượng</label>
+            <div class="stepper">
+              <button id="modal-qty-dec" type="button" class="btn stepper-btn" aria-label="Giảm số lượng">−</button>
+              <span id="modal-qty-val" class="stepper-val">1</span>
+              <button id="modal-qty-inc" type="button" class="btn stepper-btn" aria-label="Tăng số lượng">+</button>
+            </div>
+          </div>
+
+          <div id="modal-seat-field" class="field">
+            <label for="modal-seat-select">Ghế phục vụ</label>
+            <select id="modal-seat-select" class="select-touch"></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Tùy chọn món (Miễn phí)</label>
+          <div id="modal-modifiers-list" class="modifiers-grid"></div>
+        </div>
+
+        <div class="field">
+          <label id="modal-topping-label">Thêm topping (15.000 VND / phần)</label>
+          <div class="topping-row">
+            <div class="stepper">
+              <button id="modal-top-dec" type="button" class="btn stepper-btn" aria-label="Giảm topping">−</button>
+              <span id="modal-top-val" class="stepper-val">0</span>
+              <button id="modal-top-inc" type="button" class="btn stepper-btn" aria-label="Tăng topping">+</button>
+            </div>
+            <span id="modal-top-subtotal" class="muted-small">+0 VND</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="modal-note-input">Ghi chú riêng cho món</label>
+          <input id="modal-note-input" type="text" maxlength="200" placeholder="VD: Nước dùng nóng, ít mặn..." />
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <div class="modal-total-preview">
+          <span>Thành tiền:</span>
+          <strong id="modal-line-total">0 VND</strong>
+        </div>
+        <button id="item-modal-save" type="button" class="btn btn-primary">Thêm vào giỏ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Checkout Review & Confirmation Modal -->
+  <div id="checkout-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="checkout-modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="checkout-modal-title">Xác nhận đơn hàng</h3>
+        <button id="checkout-modal-close" type="button" class="btn btn-sm">Đóng</button>
+      </div>
+
+      <div id="checkout-review-view" class="modal-body">
+        <div id="checkout-meta" class="checkout-meta"></div>
+        <div id="checkout-items-list" class="checkout-items-list"></div>
+        <div id="checkout-totals" class="totals-box"></div>
+        <p id="checkout-error" class="inline-error" hidden></p>
+      </div>
+
+      <div id="checkout-review-footer" class="modal-footer">
+        <button id="checkout-back-btn" type="button" class="btn">Quay lại sửa</button>
+        <button id="checkout-submit-btn" type="button" class="btn btn-primary">Xác nhận đặt món</button>
+      </div>
+
+      <div id="checkout-success-view" class="modal-body success-view" hidden>
+        <div class="success-badge">Đã xác nhận</div>
+        <h4 id="confirmed-order-number" class="order-number-hero">#000</h4>
+        <p id="confirmed-order-id" class="muted-small"></p>
+        <p id="confirmed-order-total" class="confirmed-total"></p>
+        <button id="start-new-order-btn" type="button" class="btn btn-primary btn-block">Tạo đơn mới</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/config.example.js"></script>
+  <script src="js/format.js"></script>
+  <script src="js/cart.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
 </body>

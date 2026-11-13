@@ -35,12 +35,22 @@
     }
   }
 
-  async function requestGet(action, extraParams) {
+  function clearPasscode() {
+    if (global.sessionStorage) {
+      global.sessionStorage.removeItem(STORAGE_KEYS.PASSCODE);
+    }
+  }
+
+  function assertConfiguredUrl() {
     const baseUrl = getApiUrl();
     if (!baseUrl || baseUrl.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
-      throw new Error('GAS Web App URL is not configured.');
+      throw new Error('Chưa cấu hình URL của Google Apps Script Web App.');
     }
+    return baseUrl;
+  }
 
+  async function requestGet(action, extraParams) {
+    const baseUrl = assertConfiguredUrl();
     const url = new URL(baseUrl);
     url.searchParams.set('action', action);
     if (extraParams) {
@@ -63,6 +73,9 @@
         redirect: 'follow',
         signal: controller.signal,
       });
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status);
+      }
       return await response.json();
     } finally {
       clearTimeout(timer);
@@ -70,11 +83,7 @@
   }
 
   async function requestPost(action, payload) {
-    const baseUrl = getApiUrl();
-    if (!baseUrl || baseUrl.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
-      throw new Error('GAS Web App URL is not configured.');
-    }
-
+    const baseUrl = assertConfiguredUrl();
     const body = Object.assign({}, payload || {}, {
       action: action,
       passcode: getPasscode(),
@@ -96,6 +105,9 @@
         redirect: 'follow',
         signal: controller.signal,
       });
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status);
+      }
       return await response.json();
     } finally {
       clearTimeout(timer);
@@ -107,14 +119,24 @@
     setApiUrl: setApiUrl,
     getPasscode: getPasscode,
     setPasscode: setPasscode,
+    clearPasscode: clearPasscode,
     checkHealth: function () {
       return requestGet('health');
     },
     fetchBootstrap: function () {
       return requestGet('bootstrap', { passcode: getPasscode() });
     },
+    getMenu: function () {
+      return requestGet('menu', { passcode: getPasscode() });
+    },
+    getModifiers: function () {
+      return requestGet('modifiers', { passcode: getPasscode() });
+    },
     ping: function () {
       return requestPost('ping', {});
+    },
+    createOrder: function (orderPayload) {
+      return requestPost('createOrder', orderPayload);
     },
   };
 })(window);
