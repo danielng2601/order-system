@@ -51,10 +51,14 @@ function resolveDateRange_(filters, nowOpt) {
   if (preset === 'custom') {
     const df = sanitizeText(f.date_from, 10);
     const dt = sanitizeText(f.date_to, 10);
-    return {
-      dateFrom: /^\d{4}-\d{2}-\d{2}$/.test(df) ? df : todayStr,
-      dateTo: /^\d{4}-\d{2}-\d{2}$/.test(dt) ? dt : todayStr,
-    };
+    let dateFrom = /^\d{4}-\d{2}-\d{2}$/.test(df) ? df : todayStr;
+    let dateTo = /^\d{4}-\d{2}-\d{2}$/.test(dt) ? dt : todayStr;
+    if (dateFrom > dateTo) {
+      const tmp = dateFrom;
+      dateFrom = dateTo;
+      dateTo = tmp;
+    }
+    return { dateFrom: dateFrom, dateTo: dateTo };
   }
   return { dateFrom: todayStr, dateTo: todayStr };
 }

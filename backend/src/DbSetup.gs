@@ -304,6 +304,15 @@ function verifyDatabaseIntegrity(ssOpt) {
         errors.push('Orphan OrderItem ' + it.order_item_id + ' referencing missing order_id: ' + oid);
         return;
       }
+      if (!Number.isInteger(it.quantity) || it.quantity < 1) {
+        errors.push('OrderItem ' + it.order_item_id + ' has invalid quantity: ' + it.quantity);
+      }
+      if (!Number.isInteger(it.topping_units) || it.topping_units < 0) {
+        errors.push('OrderItem ' + it.order_item_id + ' has invalid topping_units: ' + it.topping_units);
+      }
+      if (!Number.isInteger(it.unit_price_vnd) || it.unit_price_vnd < 0 || !Number.isInteger(it.line_total_vnd) || it.line_total_vnd < 0) {
+        errors.push('OrderItem ' + it.order_item_id + ' has invalid integer VND values');
+      }
       if (parentOrder.order_type === 'DINE_IN') {
         if (!it.seat_id || !seatIds[it.seat_id]) {
           errors.push('OrderItem ' + it.order_item_id + ' has invalid seat_id: ' + it.seat_id);

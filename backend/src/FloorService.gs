@@ -520,6 +520,9 @@ function handleMoveOrderItem_(ss, payload) {
   if (!isActiveOrderStatus_(order.status)) {
     return { error: { code: 'INVALID_STATE', message: 'Cannot move items on order status: ' + order.status } };
   }
+  if (order.payment_status === 'Paid') {
+    return { error: { code: 'INVALID_STATE', message: 'Không thể chuyển ghế trên đơn hàng đã thanh toán.' } };
+  }
   if (order.version !== expectedVersion) {
     return {
       error: {
