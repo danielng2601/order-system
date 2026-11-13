@@ -97,12 +97,13 @@ test('API Contract: rejects malformed JSON and non-object JSON bodies', () => {
 
 test('Order Integrity: AuditLog or IdempotencyKeys write failure rolls back Orders AND OrderItems cleanly', () => {
   const ctx = bootBackend();
+  const token = post(ctx, { action: 'login', passcode: 'test-pass-999' }).data.session_token;
 
   // Fail on AuditLog write
   ctx._ss.getSheetByName('AuditLog')._failOnNextWrite = true;
   const auditFailRes = post(ctx, {
     action: 'createOrder',
-    passcode: 'test-pass-999',
+    session_token: token,
     idempotency_key: 'idemp-audit-fail-1',
     order_type: 'TAKEAWAY',
     items: [{ item_id: 'MY_VAN_THAN', quantity: 1 }],
@@ -116,7 +117,7 @@ test('Order Integrity: AuditLog or IdempotencyKeys write failure rolls back Orde
   ctx._ss.getSheetByName('IdempotencyKeys')._failOnNextWrite = true;
   const idempFailRes = post(ctx, {
     action: 'createOrder',
-    passcode: 'test-pass-999',
+    session_token: token,
     idempotency_key: 'idemp-key-fail-1',
     order_type: 'TAKEAWAY',
     items: [{ item_id: 'MY_VAN_THAN', quantity: 1 }],

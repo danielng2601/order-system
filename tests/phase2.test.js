@@ -27,13 +27,19 @@ function bootBackend() {
     vm.runInContext(code, ctx, { filename: relPath });
   }
   ctx.setupDatabase();
+  const loginRes = JSON.parse(
+    ctx.doPost({
+      postData: { contents: JSON.stringify({ action: 'login', passcode: 'test-pass-999' }) },
+    }).getContent()
+  );
+  ctx._sessionToken = loginRes.data.session_token;
   return ctx;
 }
 
 function post(ctx, bodyObj) {
   const out = ctx.doPost({
     postData: {
-      contents: JSON.stringify(Object.assign({ passcode: 'test-pass-999' }, bodyObj)),
+      contents: JSON.stringify(Object.assign({ session_token: ctx._sessionToken }, bodyObj)),
     },
   });
   return JSON.parse(out.getContent());

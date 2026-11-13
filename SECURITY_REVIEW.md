@@ -16,3 +16,8 @@
 - **Shared Passcode:** Staff share one `STAFF_PASSCODE`; individual staff attribution is not available until per-user accounts are introduced.
 - **Public Static Origin:** Because GitHub Pages is public, anyone who obtains `STAFF_PASSCODE` can log in from any browser. GAS `ANYONE_ANONYMOUS` access is required because Google OAuth is not used on the frontend.
 - **Rate Limiting:** GAS `CacheService` does not enforce per-IP login brute-force lockouts; strong passcodes (8+ mixed characters) are recommended.
+
+## Phase 2.5 Security Audit Update (2026-11-13)
+- Removed the raw `payload.passcode` fallback from `isAuthorizedPost_()` in `backend/src/Code.gs`. Only `POST { action: "login", passcode }` accepts `STAFF_PASSCODE`; all other protected endpoints strictly require a valid `session_token` from `CacheService`.
+- Verified `CacheService` eviction returns `SESSION_EXPIRED` and clears client session state.
+- Enforced `payment_status !== 'Paid'` guards on `addItemsToOrder`, `mergeOrders`, and `splitOrder` to prevent ambiguous payment ownership.

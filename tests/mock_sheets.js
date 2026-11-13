@@ -84,6 +84,10 @@ class MockSheet {
   }
 
   appendRow(rowValues) {
+    if (this._failOnNextWrite) {
+      this._failOnNextWrite = false;
+      throw new Error('Simulated appendRow failure');
+    }
     if (this.failOnAppend) {
       throw new Error('Simulated appendRow failure');
     }

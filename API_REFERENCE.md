@@ -81,32 +81,32 @@ Creates a new `DINE_IN` or `TAKEAWAY` order inside `LockService.getScriptLock()`
 
 ### Phase 2 Endpoints (Authenticated `POST`)
 
-All Phase 2 endpoints authenticate via `staffPasscode` (or valid `sessionToken`) in the JSON body.
+All protected endpoints require a valid `session_token` obtained from `POST { "action": "login", "passcode": "..." }`. Raw passcodes are **rejected** on all non-login endpoints.
 
 1. **`syncStatus`**
-   - Body: `{ "action": "syncStatus", "staffPasscode": "..." }`
-   - Returns: `{ syncRevision, serverTime, activeOrderCount }`
+   - Body: `{ "action": "syncStatus", "session_token": "..." }`
+   - Returns: `{ syncRevision, serverTime }`
 2. **`getFloorState`**
-   - Body: `{ "action": "getFloorState", "staffPasscode": "..." }`
-   - Returns: `{ syncRevision, summary, tables: [ { table_number, total_seats, occupied_seats, available_seats, unavailable_seats, active_orders_count, active_total_vnd, seats: [...], active_orders: [...] } ], takeaway_orders: [...] }`
+   - Body: `{ "action": "getFloorState", "session_token": "..." }`
+   - Returns: `{ syncRevision, serverTime, tables: [...], seats: [...], activeOrders: [...] }`
 3. **`listActiveOrders`**
-   - Body: `{ "action": "listActiveOrders", "staffPasscode": "...", "filters": { "orderType": "DINE_IN|TAKEAWAY", "tableNumber": 1, "status": "Draft|Confirmed", "paymentStatus": "Unpaid|Paid", "search": "..." } }`
-   - Returns: `{ syncRevision, orders: [...], total }`
+   - Body: `{ "action": "listActiveOrders", "session_token": "...", "filters": { "order_type": "DINE_IN|TAKEAWAY", "table_number": 1, "seat_id": "T1-S1", "order_number": "..." } }`
+   - Returns: `{ syncRevision, orders: [...] }`
 4. **`getOrderDetail`**
-   - Body: `{ "action": "getOrderDetail", "staffPasscode": "...", "orderId": "ORD-..." }`
-   - Returns: `{ syncRevision, order, items, grouped_by_table_seat }`
+   - Body: `{ "action": "getOrderDetail", "session_token": "...", "order_id": "ORD-..." }`
+   - Returns: `{ syncRevision, order, items, seatSubtotals, tableSubtotals }`
 5. **`addItemsToOrder`** *(Locked + Idempotent + Optimistic Version)*
-   - Body: `{ "action": "addItemsToOrder", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderId": "ORD-...", "expected_version": 1, "items": [...] }`
-   - Returns: `{ order, items, added_items, replayed, syncRevision }`
+   - Body: `{ "action": "addItemsToOrder", "session_token": "...", "idempotency_key": "<uuid>", "order_id": "ORD-...", "expected_version": 1, "items": [...] }`
+   - Returns: `{ order, addedItems, replayed, syncRevision }`
 6. **`moveOrderItem`** *(Locked + Idempotent + Optimistic Version)*
-   - Body: `{ "action": "moveOrderItem", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderId": "ORD-...", "orderItemId": "ORD-...-L01", "targetSeatId": "T2-S1", "expected_version": 2 }`
-   - Returns: `{ order, items, moved_item, replayed, syncRevision }`
-7. **`mergeOrders`** *(Locked + Idempotent + Optimistic Version Map)*
-   - Body: `{ "action": "mergeOrders", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderIds": ["ORD-A", "ORD-B"], "targetOrderId": "ORD-A", "expectedVersions": { "ORD-A": 1, "ORD-B": 1 } }`
-   - Returns: `{ order, items, merged_order_ids, source_orders, replayed, syncRevision }`
+   - Body: `{ "action": "moveOrderItem", "session_token": "...", "idempotency_key": "<uuid>", "order_id": "ORD-...", "order_item_id": "ORD-...-L01", "target_seat_id": "T2-S1", "expected_version": 2 }`
+   - Returns: `{ order, movedItem, replayed, syncRevision }`
+7. **`mergeOrders`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "mergeOrders", "session_token": "...", "idempotency_key": "<uuid>", "source_orders": [{ "order_id": "ORD-A", "expected_version": 1 }, { "order_id": "ORD-B", "expected_version": 1 }] }`
+   - Returns: `{ order, items, mergedSourceOrderIds, replayed, syncRevision }`
 8. **`splitOrder`** *(Locked + Idempotent + Optimistic Version)*
-   - Body: `{ "action": "splitOrder", "staffPasscode": "...", "idempotency_key": "<uuid>", "orderId": "ORD-...", "expected_version": 1, "itemIds": ["ORD-...-L01"], "notes": "..." }`
-   - Returns: `{ source_order, source_items, new_order, new_items, replayed, syncRevision }`
+   - Body: `{ "action": "splitOrder", "session_token": "...", "idempotency_key": "<uuid>", "source_order_id": "ORD-...", "expected_version": 1, "split_item_ids": ["ORD-...-L01"] }`
+   - Returns: `{ sourceOrder, newOrder, splitItemIds, replayed, syncRevision }`
 
 ## Error Codes
 - `BAD_REQUEST` — Invalid JSON, missing `action`, or missing `idempotency_key`.

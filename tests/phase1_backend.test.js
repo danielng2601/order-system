@@ -41,6 +41,12 @@ function get(ctx, params) {
   return JSON.parse(out.getContent());
 }
 
+function loginAndGetToken(ctx) {
+  const res = post(ctx, { action: 'login', passcode: 'test-pass-999' });
+  assert.equal(res.ok, true);
+  return res.data.session_token;
+}
+
 test('Database setup seeds all 8 sheets, 7 menu items, 6 modifiers, 36 seats, and supports safe migration', () => {
   const ctx = bootBackend();
   const ss = ctx._ss;
@@ -59,11 +65,12 @@ test('Database setup seeds all 8 sheets, 7 menu items, 6 modifiers, 36 seats, an
 test('Menu & Modifiers POST endpoints require valid auth and return all menu prices', () => {
   const ctx = bootBackend();
 
-  const unauth = post(ctx, { action: 'menu', passcode: 'wrong' });
+  const unauth = post(ctx, { action: 'menu', passcode: 'test-pass-999' });
   assert.equal(unauth.ok, false);
   assert.equal(unauth.error.code, 'UNAUTHORIZED');
 
-  const menuRes = post(ctx, { action: 'menu', passcode: 'test-pass-999' });
+  const token = loginAndGetToken(ctx);
+  const menuRes = post(ctx, { action: 'menu', session_token: token });
   assert.equal(menuRes.ok, true);
   const byId = Object.fromEntries(menuRes.data.menuItems.map((m) => [m.item_id, m.price_vnd]));
   assert.deepEqual(byId, {
@@ -76,13 +83,14 @@ test('Menu & Modifiers POST endpoints require valid auth and return all menu pri
     QUAY: 5000,
   });
 
-  const modRes = post(ctx, { action: 'modifiers', passcode: 'test-pass-999' });
+  const modRes = post(ctx, { action: 'modifiers', session_token: token });
   assert.equal(modRes.ok, true);
   assert.equal(modRes.data.modifiers.length, 6);
 });
 
 test('createOrder rejects unknown item, sold-out item, zero/negative/large qty, invalid modifier, and invalid seat', () => {
   const ctx = bootBackend();
+  const token = loginAndGetToken(ctx);
 
   // Mark QUAY as sold out in MenuItems sheet
   const menuSheet = ctx._ss.getSheetByName('MenuItems');
@@ -91,7 +99,7 @@ test('createOrder rejects unknown item, sold-out item, zero/negative/large qty, 
   const baseReq = (items, orderType = 'DINE_IN') =>
     post(ctx, {
       action: 'createOrder',
-      passcode: 'test-pass-999',
+      session_token: token,
       idempotency_key: 'idemp-' + Math.random().toString(36).slice(2, 12),
       order_type: orderType,
       items,
@@ -122,10 +130,11 @@ test('createOrder rejects unknown item, sold-out item, zero/negative/large qty, 
 
 test('createOrder persists DINE_IN multi-item order with toppings, free modifiers, custom notes, AuditLog, and ignores client prices', () => {
   const ctx = bootBackend();
+  const token = loginAndGetToken(ctx);
 
   const res = post(ctx, {
     action: 'createOrder',
-    passcode: 'test-pass-999',
+    session_token: token,
     idempotency_key: 'idemp-order-0001',
     order_type: 'DINE_IN',
     notes: 'Khách quen',
@@ -171,10 +180,11 @@ test('createOrder persists DINE_IN multi-item order with toppings, free modifier
 
 test('createOrder supports TAKEAWAY without seat_id and prevents duplicate requests via idempotency_key', () => {
   const ctx = bootBackend();
+  const token = loginAndGetToken(ctx);
 
   const payload = {
     action: 'createOrder',
-    passcode: 'test-pass-999',
+    session_token: token,
     idempotency_key: 'idemp-takeaway-001',
     order_type: 'TAKEAWAY',
     notes: 'Đóng hộp riêng',
@@ -196,12 +206,13 @@ test('createOrder supports TAKEAWAY without seat_id and prevents duplicate reque
 
 test('createOrder handles LockService contention and rolls back partial database write failures', () => {
   const ctx = bootBackend();
+  const token = loginAndGetToken(ctx);
 
   // 1. Concurrent lock contention
   ctx._setLockBusy(true);
   const lockedRes = post(ctx, {
     action: 'createOrder',
-    passcode: 'test-pass-999',
+    session_token: token,
     idempotency_key: 'idemp-lock-test-1',
     order_type: 'TAKEAWAY',
     items: [{ item_id: 'MY_TRE_EM', quantity: 1 }],
@@ -214,7 +225,7 @@ test('createOrder handles LockService contention and rolls back partial database
   ctx._ss.getSheetByName('OrderItems')._failOnNextWrite = true;
   const failRes = post(ctx, {
     action: 'createOrder',
-    passcode: 'test-pass-999',
+    session_token: token,
     idempotency_key: 'idemp-rollback-1',
     order_type: 'TAKEAWAY',
     items: [{ item_id: 'MY_TRE_EM', quantity: 1 }],
