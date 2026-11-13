@@ -10,11 +10,11 @@
 ## 2. Google Apps Script Backend Setup
 
 1. Create a standalone Apps Script project at [script.google.com](https://script.google.com) (or via `clasp create --type standalone`).
-2. Copy all files from `backend/src/` (`appsscript.json`, `Config.gs`, `Validation.gs`, `DbSetup.gs`, `PrinterService.gs`, `Repository.gs`, `OrderService.gs`, `FloorService.gs`, `Code.gs`) into the Apps Script project (or copy `backend/.clasp.json.example` to `backend/.clasp.json`, fill in `scriptId`, and run `clasp push`).
+2. Copy all files from `backend/src/` (`appsscript.json`, `Config.gs`, `Validation.gs`, `DbSetup.gs`, `PrinterService.gs`, `Repository.gs`, `OrderService.gs`, `FloorService.gs`, `PaymentAndLifecycleService.gs`, `HistoryAndReportService.gs`, `Code.gs`) into the Apps Script project (or copy `backend/.clasp.json.example` to `backend/.clasp.json`, fill in `scriptId`, and run `clasp push`).
 3. In Apps Script **Project Settings → Script Properties**, add:
    - `SPREADSHEET_ID`: `<your Google Sheet ID>`
    - `STAFF_PASSCODE`: `<strong passcode for restaurant staff>`
-4. In the Apps Script editor, select `setupDatabase` and click **Run** (grant Sheets & Drive permissions when prompted). Verify all 8 sheets are created and seeded.
+4. In the Apps Script editor, select `setupDatabase` and click **Run** (grant Sheets & Drive permissions when prompted). Verify all 9 sheets are created and seeded.
 5. Deploy as Web App (**Deploy → New deployment → Web app**):
    - **Execute as:** `Me` (`USER_DEPLOYING`)
    - **Who has access:** `Anyone` (`ANYONE_ANONYMOUS`)

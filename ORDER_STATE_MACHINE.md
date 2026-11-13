@@ -8,13 +8,13 @@
 
 ## 2. State Transition Table
 
-| Current `status` | Current `payment_status` | `addItemsToOrder` | `moveOrderItem` | `mergeOrders` | `splitOrder` |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `Draft` | `Unpaid` | Allowed (`v+1`) | Allowed (`DINE_IN` only, `v+1`) | Allowed -> `Merged` | Allowed (`v+1`) |
-| `Confirmed` | `Unpaid` | Allowed (`v+1`) | Allowed (`DINE_IN` only, `v+1`) | Allowed -> `Merged` | Allowed (`v+1`) |
-| `Draft` / `Confirmed` | `Paid` | **Rejected** (`INVALID_STATE`) | Allowed (`DINE_IN` only) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) |
-| `Cancelled` | Any | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) |
-| `Merged` | Any | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) |
+| Current `status` | Current `payment_status` | `addItems` / `updateItem` / `removeItem` | `moveOrderItem` | `mergeOrders` | `splitOrder` | `settlePayment` | `cancelOrder` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `Draft` | `Unpaid` | Allowed (`v+1`) | Allowed (`DINE_IN`, `v+1`) | Allowed -> `Merged` | Allowed (`v+1`) | Allowed -> `Paid` (`v+1`) | Allowed -> `Cancelled` (`v+1`) |
+| `Confirmed` | `Unpaid` | Allowed (`v+1`) | Allowed (`DINE_IN`, `v+1`) | Allowed -> `Merged` | Allowed (`v+1`) | Allowed -> `Paid` (`v+1`) | Allowed -> `Cancelled` (`v+1`) |
+| `Draft` / `Confirmed` | `Paid` | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE` in UI; immutable Paid order) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) |
+| `Cancelled` | Any | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) |
+| `Merged` | Any | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) | **Rejected** (`INVALID_STATE`) |
 
 ## 3. Order Type Invariants
 - **`DINE_IN`**: Every `OrderItem` must have a valid active `seat_id` (`T1-S1`..`T9-S4`). `Orders.table_numbers_json` is derived from its items.

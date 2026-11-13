@@ -196,7 +196,21 @@ function createGasMockEnv(options = {}) {
       }),
     },
     Utilities: {
-      formatDate: () => '2026-11-13T17:30:00+07:00',
+      formatDate: (date, tz, format) => {
+        const d = date instanceof Date ? date : new Date();
+        // Shift to Asia/Ho_Chi_Minh (+07:00)
+        const vn = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+        const yyyy = vn.getUTCFullYear();
+        const mm = String(vn.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(vn.getUTCDate()).padStart(2, '0');
+        const HH = String(vn.getUTCHours()).padStart(2, '0');
+        const MM = String(vn.getUTCMinutes()).padStart(2, '0');
+        const SS = String(vn.getUTCSeconds()).padStart(2, '0');
+        if (format === 'yyyy-MM-dd') return `${yyyy}-${mm}-${dd}`;
+        if (format === 'yyyyMMdd-HHmmss') return `${yyyy}${mm}${dd}-${HH}${MM}${SS}`;
+        if (format === 'yyyyMMdd') return `${yyyy}${mm}${dd}`;
+        return `${yyyy}-${mm}-${dd}T${HH}:${MM}:${SS}+07:00`;
+      },
       getUuid: () => '00000000-0000-4000-8000-' + String(uuidCounter++).padStart(12, '0'),
     },
     ContentService: {

@@ -94,7 +94,7 @@ All protected endpoints require a valid `session_token` obtained from `POST { "a
    - Returns: `{ syncRevision, orders: [...] }`
 4. **`getOrderDetail`**
    - Body: `{ "action": "getOrderDetail", "session_token": "...", "order_id": "ORD-..." }`
-   - Returns: `{ syncRevision, order, items, seatSubtotals, tableSubtotals }`
+   - Returns: `{ syncRevision, order, items, seatSubtotals, tableSubtotals, payment, auditHistory }`
 5. **`addItemsToOrder`** *(Locked + Idempotent + Optimistic Version)*
    - Body: `{ "action": "addItemsToOrder", "session_token": "...", "idempotency_key": "<uuid>", "order_id": "ORD-...", "expected_version": 1, "items": [...] }`
    - Returns: `{ order, addedItems, replayed, syncRevision }`
@@ -108,15 +108,35 @@ All protected endpoints require a valid `session_token` obtained from `POST { "a
    - Body: `{ "action": "splitOrder", "session_token": "...", "idempotency_key": "<uuid>", "source_order_id": "ORD-...", "expected_version": 1, "split_item_ids": ["ORD-...-L01"] }`
    - Returns: `{ sourceOrder, newOrder, splitItemIds, replayed, syncRevision }`
 
+## Phase 3 Endpoints (Payment, Lifecycle, History & Reporting — Protected POST)
+1. **`settlePayment`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "settlePayment", "session_token": "...", "idempotency_key": "<uuid>", "order_id": "ORD-...", "expected_version": 1, "payment_method": "CASH|BANK", "reference_note": "..." }`
+   - Returns: `{ order, payment, replayed, syncRevision }` (server computes `amount_vnd` from `Orders.total_vnd`)
+2. **`updateOrderItem`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "updateOrderItem", "session_token": "...", "idempotency_key": "<uuid>", "order_id": "ORD-...", "order_item_id": "ORD-...-L01", "expected_version": 1, "quantity": 2, "topping_units": 1, "modifier_ids": [...], "custom_note": "...", "seat_id": "T1-S2" }`
+   - Returns: `{ order, updatedItem, replayed, syncRevision }`
+3. **`removeOrderItem`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "removeOrderItem", "session_token": "...", "idempotency_key": "<uuid>", "order_id": "ORD-...", "order_item_id": "ORD-...-L01", "expected_version": 1 }`
+   - Returns: `{ order, removedItemId, replayed, syncRevision }` (rejects if it would leave 0 items)
+4. **`cancelOrder`** *(Locked + Idempotent + Optimistic Version)*
+   - Body: `{ "action": "cancelOrder", "session_token": "...", "idempotency_key": "<uuid>", "order_id": "ORD-...", "expected_version": 1, "cancel_reason": "..." }`
+   - Returns: `{ order, replayed, syncRevision }`
+5. **`listOrderHistory`**
+   - Body: `{ "action": "listOrderHistory", "session_token": "...", "filters": { "date_preset": "today|yesterday|custom|all", "date_from": "yyyy-MM-dd", "date_to": "yyyy-MM-dd", "status": "...", "payment_status": "...", "order_type": "...", "table_number": 1, "search": "..." }, "page": 1, "page_size": 25 }`
+   - Returns: `{ syncRevision, dateFrom, dateTo, total, page, pageSize, totalPages, orders }`
+6. **`getReports`**
+   - Body: `{ "action": "getReports", "session_token": "...", "filters": { "date_preset": "today|yesterday|custom|all", "date_from": "yyyy-MM-dd", "date_to": "yyyy-MM-dd" } }`
+   - Returns: `{ syncRevision, dateFrom, dateTo, summary, dailyBreakdown, payments }`
+
 ## Error Codes
 - `BAD_REQUEST` — Invalid JSON, missing `action`, or missing `idempotency_key`.
 - `METHOD_NOT_ALLOWED` — Attempted `GET` on a mutating action.
 - `UNAUTHORIZED` — Missing/invalid `STAFF_PASSCODE` or unset Script Property.
 - `SESSION_EXPIRED` — Session token expired or invalid.
 - `NOT_FOUND` — Target `orderId` or `orderItemId` does not exist.
-- `INVALID_STATE` — Order is `Cancelled` or `Merged`, or operation violates order type (e.g., moving a `TAKEAWAY` item to a seat).
+- `INVALID_STATE` — Order is `Paid`, `Cancelled`, or `Merged`, or operation violates order type (e.g., moving a `TAKEAWAY` item to a seat).
 - `VERSION_CONFLICT` — `expected_version` (or `expectedVersions[orderId]`) does not match current `Orders.version`. Client should refresh and retry.
-- `VALIDATION_ERROR` — Unknown/sold-out item, invalid quantity (`1..100`), invalid topping (`0..20`), invalid modifier, missing/invalid `seat_id` for `DINE_IN`, or invalid split/merge selection.
+- `VALIDATION_ERROR` — Unknown/sold-out item, invalid quantity (`1..100`), invalid topping (`0..20`), invalid modifier, missing/invalid `seat_id` for `DINE_IN`, invalid `payment_method`, missing `cancel_reason`, removing last item, or invalid split/merge selection.
 - `LOCK_TIMEOUT` — `LockService.getScriptLock()` timed out after 15 seconds.
-- `NOT_IMPLEMENTED` — Action scheduled for Phase 3.
+- `NOT_IMPLEMENTED` — Unimplemented future action.
 - `INTERNAL_ERROR` — Unhandled server error or rolled-back database write failure.

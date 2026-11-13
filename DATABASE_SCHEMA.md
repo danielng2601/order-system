@@ -100,7 +100,22 @@ Re-running `setupDatabase()` checks existing header rows on every sheet and appe
 | Column | Type | Description |
 | :--- | :--- | :--- |
 | `idempotency_key` | String (PK) | Client-generated UUID |
-| `action` | String | Mutation action name (`createOrder`) |
+| `action` | String | Mutation action name (`createOrder`, `settlePayment`, etc.) |
 | `order_id` | String | Associated `order_id` |
 | `response_json` | String (JSON) | Cached response for safe replay on retry |
 | `created_at` | String | Timestamp |
+
+## 9. `Payments` (Schema v1.3.0 / Phase 3)
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `payment_id` | String (PK) | `PAY-yyyyMMdd-HHmmss-XXXX` |
+| `order_id` | String (FK) | References `Orders.order_id` |
+| `amount_vnd` | Integer | Server-calculated integer VND matching `Orders.total_vnd` |
+| `payment_method` | String | `CASH` or `BANK` |
+| `payment_status` | String | `Paid` |
+| `reference_note` | String | Optional transaction reference / note |
+| `created_at` | String | Settlement timestamp (`Asia/Ho_Chi_Minh`) |
+| `created_by` | String | Staff/system actor |
+| `idempotency_key` | String | Client-generated UUID |
+
+> **Orders Phase 3 Columns (v1.3.0):** `Orders` also includes `payment_method`, `cancelled_at`, `cancel_reason`, and `cancelled_by` appended safely via `setupDatabase()`.
